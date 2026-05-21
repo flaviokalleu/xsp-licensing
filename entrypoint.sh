@@ -58,9 +58,17 @@ if [[ -z "$MODE" ]]; then
   echo "  [U] Um único domínio (paths /api, /admin...) + registry na porta 5000"
   echo "  [I] Somente IP, sem TLS (HTTP)     — para testes locais"
   echo
+  ask() {
+    local prompt="$1" var="$2" default="${3:-}"
+    printf "%s" "$prompt"
+    local val
+    IFS= read -r val </dev/tty || val=""
+    val="${val:-$default}"
+    printf -v "$var" '%s' "$val"
+  }
+
   while true; do
-    read -rp "  Escolha [S/U/I] (padrão S): " MODE
-    MODE="${MODE:-S}"
+    ask "  Escolha [S/U/I] (padrão I): " MODE "I"
     MODE="${MODE^^}"
     [[ "$MODE" =~ ^[SUI]$ ]] && break
     warn "Digite S, U ou I."
@@ -70,7 +78,8 @@ if [[ -z "$MODE" ]]; then
     I)
       warn "Modo IP: sem TLS. Não use em produção."
       PUBLIC_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
-      read -rp "  IP público da VPS [$PUBLIC_IP]: " inp; PUBLIC_HOST="${inp:-$PUBLIC_IP}"
+      ask "  IP público da VPS [$PUBLIC_IP]: " inp "$PUBLIC_IP"
+      PUBLIC_HOST="$inp"
       API_HOST="$PUBLIC_HOST:8080"
       ADM_HOST="$PUBLIC_HOST:8081"
       PORTAL_HOST="$PUBLIC_HOST:8082"
@@ -79,9 +88,9 @@ if [[ -z "$MODE" ]]; then
       INSTALL_URL="http://$PUBLIC_HOST/install.sh"
       ;;
     U)
-      read -rp "  Domínio único (ex: painel.seudominio.com): " PUBLIC_HOST
+      ask "  Domínio único (ex: painel.seudominio.com): " PUBLIC_HOST ""
       [[ -n "$PUBLIC_HOST" ]] || die "Domínio obrigatório."
-      read -rp "  E-mail Let's Encrypt: " ACME_EMAIL
+      ask "  E-mail Let's Encrypt: " ACME_EMAIL ""
       [[ -n "$ACME_EMAIL" ]] || die "E-mail obrigatório."
       API_HOST="$PUBLIC_HOST/api"
       ADM_HOST="$PUBLIC_HOST"
@@ -90,12 +99,12 @@ if [[ -z "$MODE" ]]; then
       INSTALL_URL="https://$PUBLIC_HOST/install.sh"
       ;;
     S)
-      read -rp "  API           (ex: license.seudominio.com): " API_HOST
-      read -rp "  Admin         (ex: admin.seudominio.com): "   ADM_HOST
-      read -rp "  Portal        (ex: minha.seudominio.com): "   PORTAL_HOST
-      read -rp "  Registry      (ex: registry.seudominio.com): " REG_HOST
-      read -rp "  Landing/inst. (ex: seudominio.com): "         PUBLIC_HOST
-      read -rp "  E-mail Let's Encrypt: "                       ACME_EMAIL
+      ask "  API           (ex: license.seudominio.com): " API_HOST ""
+      ask "  Admin         (ex: admin.seudominio.com): "   ADM_HOST ""
+      ask "  Portal        (ex: minha.seudominio.com): "   PORTAL_HOST ""
+      ask "  Registry      (ex: registry.seudominio.com): " REG_HOST ""
+      ask "  Landing/inst. (ex: seudominio.com): "         PUBLIC_HOST ""
+      ask "  E-mail Let's Encrypt: "                       ACME_EMAIL ""
       for v in "$API_HOST" "$ADM_HOST" "$PORTAL_HOST" "$REG_HOST" "$PUBLIC_HOST" "$ACME_EMAIL"; do
         [[ -n "$v" ]] || die "Todos os campos são obrigatórios."
       done
@@ -103,8 +112,7 @@ if [[ -z "$MODE" ]]; then
       ;;
   esac
 
-  read -rp "  Usuário admin-dashboard [admin]: " ADM_USER
-  ADM_USER="${ADM_USER:-admin}"
+  ask "  Usuário admin-dashboard [admin]: " ADM_USER "admin"
   REG_USER="license"
   PANEL_VERSION="10.0.3"
   ACCESS_MODE="$MODE"
