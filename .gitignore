@@ -1,0 +1,26 @@
+# Segredos — NUNCA commitar
+.env
+api-license/.env
+api-license/auth/htpasswd
+*.pem
+*.key
+*.p12
+
+# Artefatos de build
+bundle.zip
+install-server
+build-cache/
+www-public/
+
+# Dados runtime (gerados pelo stack)
+pgdata/
+redisdata/
+regdata/
+
+# Backups gerados pelo install-server
+*.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp

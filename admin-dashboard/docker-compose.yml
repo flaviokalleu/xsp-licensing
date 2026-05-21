@@ -1,0 +1,16 @@
+services:
+  admin:
+    build: .
+    restart: unless-stopped
+    environment:
+      ADMIN_API_BASE: ${ADMIN_API_BASE:-http://api:8443}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN}
+      ADMIN_DASH_USER: ${ADMIN_DASH_USER:-admin}
+      ADMIN_DASH_PASS: ${ADMIN_DASH_PASS}
+    ports: ["8081:80"]
+    networks: [xsp-net]
+
+networks:
+  xsp-net:
+    external: true
+    name: api-license_xsp-net

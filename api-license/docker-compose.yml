@@ -1,0 +1,54 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports: ["8443:8443"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [xsp-net]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xsp
+      POSTGRES_PASSWORD: ${DB_PASS:-CHANGE_ME}
+      POSTGRES_DB: xsp_license
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "xsp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [xsp-net]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [xsp-net]
+
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: "XSP Registry"
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+    volumes:
+      - regdata:/var/lib/registry
+      - ./auth:/auth:ro
+    ports: ["5000:5000"]
+    networks: [xsp-net]
+
+volumes:
+  pgdata:
+  regdata:
+
+networks:
+  xsp-net:

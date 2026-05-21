@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instalar Painel — XSP</title>
+<meta name="description" content="Instalador automático do Painel Office Xtream">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg-grad: radial-gradient(circle at top right, #1a1f3a 0%, #0a0e1a 60%);
+    --fg: #e8eef7;
+    --mut: #8b94a7;
+    --accent: #00d4aa;
+    --accent-dim: #009975;
+    --danger: #ff5f6d;
+    --card: rgba(22, 27, 40, 0.7);
+    --border: #2a3046;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    color: var(--fg);
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+  header h1 .dot { color: var(--accent); }
+  main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .container { max-width: 720px; width: 100%; }
+  h2 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -.8px;
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+  h2 .glow {
+    background: linear-gradient(90deg, var(--accent), #00b8ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .subtitle { color: var(--mut); margin-bottom: 32px; font-size: 17px; }
+
+  .step-row { display: flex; gap: 16px; margin-bottom: 24px; }
+  .step-num {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: #0a0e1a;
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-body { padding-top: 4px; }
+  .step-body h3 { font-size: 17px; margin-bottom: 6px; font-weight: 600; }
+  .step-body p { color: var(--mut); font-size: 14px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 16px 0 32px 52px;
+    backdrop-filter: blur(8px);
+  }
+
+  .cmd {
+    font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+    background: #050810;
+    border: 1px solid var(--border);
+    color: #c9d9f0;
+    padding: 14px 56px 14px 16px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    overflow-x: auto;
+    white-space: nowrap;
+    position: relative;
+    user-select: all;
+  }
+  .cmd .prompt { color: var(--accent); margin-right: 8px; user-select: none; }
+  .cmd .pipe   { color: var(--mut); }
+  .cmd .arg    { color: #ffd479; }
+
+  .copy-btn {
+    position: absolute;
+    top: 6px; right: 6px;
+    background: var(--accent-dim);
+    color: #0a0e1a;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .copy-btn:hover  { background: var(--accent); transform: translateY(-1px); }
+  .copy-btn.copied { background: #4ade80; }
+
+  .cmd-wrap { position: relative; }
+
+  .key-input-wrap {
+    margin-bottom: 16px;
+  }
+  .key-input-wrap label {
+    display: block; font-size: 13px; color: var(--mut);
+    margin-bottom: 8px; font-weight: 500;
+  }
+  .key-input {
+    width: 100%;
+    background: #050810;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .key-input:focus { border-color: var(--accent); }
+
+  .reqs {
+    margin: 28px 0;
+    padding: 16px 20px;
+    background: rgba(0, 212, 170, 0.06);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .reqs strong { color: var(--accent); }
+  .reqs ul { margin-top: 8px; padding-left: 18px; color: var(--mut); }
+  .reqs li { margin: 4px 0; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 20px 32px;
+    color: var(--mut);
+    font-size: 13px;
+    text-align: center;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .domain-pill {
+    display: inline-block;
+    background: rgba(0, 212, 170, 0.15);
+    color: var(--accent);
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
+    font-family: monospace;
+  }
+
+  @media (max-width: 600px) {
+    h2 { font-size: 24px; }
+    .card { margin-left: 0; padding: 16px; }
+    .step-row { gap: 10px; }
+    .step-num { width: 28px; height: 28px; font-size: 13px; }
+    .cmd { font-size: 11.5px; }
+    header { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>XSP<span class="dot">.</span> Painel Office Xtream</h1>
+  <span class="domain-pill" id="domainPill">…</span>
+</header>
+
+<main>
+<div class="container">
+
+  <h2>Instale o painel em <span class="glow">3 minutos</span></h2>
+  <p class="subtitle">
+    Cole 1 comando no terminal da sua VPS. O instalador faz o resto:
+    Docker, banco de dados, painel, certificado SSL.
+  </p>
+
+  <!-- PASSO 1 -->
+  <div class="step-row">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h3>Informe sua KEY (opcional — preenche o comando)</h3>
+      <p>Se você já tem uma KEY de licença, cole abaixo para o comando vir
+         pronto. Senão, o instalador vai pedir durante a instalação.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="key-input-wrap">
+      <label for="keyInput">Sua KEY (formato: XSP-XXXX-XXXX-XXXX-XXXX)</label>
+      <input type="text" id="keyInput" class="key-input"
+             placeholder="XSP-AAAA-BBBB-CCCC-DDDD"
+             autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+
+  <!-- PASSO 2 -->
+  <div class="step-row">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h3>Conecte-se à sua VPS Ubuntu via SSH</h3>
+      <p>Requisitos mínimos: Ubuntu 22.04+, 2 vCPU, 4 GB RAM,
+         portas 80/443 livres, acesso root.</p>
+    </div>
+  </div>
+
+  <!-- PASSO 3 -->
+  <div class="step-row">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h3>Cole este comando e pressione Enter</h3>
+      <p>Tudo será instalado automaticamente. Você precisará informar
+         seu domínio e e-mail durante o processo.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cmd-wrap">
+      <div class="cmd" id="installCmd">
+        <span class="prompt">$</span><span id="cmdText">curl -sSL https://exemplo.com/install.sh | sudo bash</span>
+      </div>
+      <button class="copy-btn" id="copyBtn" onclick="copyCmd()">📋 Copiar</button>
+    </div>
+  </div>
+
+  <div class="reqs">
+    <strong>O que será instalado:</strong>
+    <ul>
+      <li>Docker + Docker Compose</li>
+      <li>Painel cifrado (verificado contra adulteração)</li>
+      <li>Banco de dados MariaDB com senha aleatória</li>
+      <li>Validação online da licença a cada 5 minutos</li>
+    </ul>
+  </div>
+
+</div>
+</main>
+
+<footer>
+  Dúvidas? <a href="mailto:suporte@SEUDOMINIO_CONTATO">Fale com o suporte</a>
+  &nbsp;·&nbsp; <a href="/admin">Área Admin</a>
+</footer>
+
+<script>
+  // ─── Auto-detecta domínio ─────────────────────────────────────────────
+  const host = window.location.host;     // ex: painel.seudominio.com
+  const proto = window.location.protocol; // ex: https:
+  const baseUrl = `${proto}//${host}`;
+  document.getElementById('domainPill').textContent = host;
+
+  // ─── Monta comando com KEY (se digitada) ─────────────────────────────
+  const keyInput = document.getElementById('keyInput');
+  const cmdText  = document.getElementById('cmdText');
+
+  function buildCmd() {
+    const k = keyInput.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (k && /^XSP-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(k)) {
+      cmdText.innerHTML =
+        `curl -sSL <span class="arg">${baseUrl}/install.sh</span> | sudo bash <span class="pipe">-s --</span> <span class="arg">${k}</span>`;
+    } else {
+      cmdText.innerHTML =
+        `curl -sSL <span class="arg">${baseUrl}/install.sh</span> | sudo bash`;
+    }
+  }
+
+  // ─── Auto-preenche se houver ?key=... na URL ─────────────────────────
+  const urlKey = new URLSearchParams(window.location.search).get('key');
+  if (urlKey) {
+    keyInput.value = urlKey.toUpperCase();
+  }
+  buildCmd();
+
+  keyInput.addEventListener('input', () => {
+    // Formata enquanto digita: insere "-" a cada 4 chars
+    let v = keyInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!v.startsWith('XSP')) v = 'XSP' + v;
+    v = v.substring(0, 3) + v.substring(3).replace(/(.{4})/g, '-$1');
+    if (v !== keyInput.value) keyInput.value = v;
+    buildCmd();
+  });
+
+  // ─── Botão de copiar ─────────────────────────────────────────────────
+  function copyCmd() {
+    const text = cmdText.textContent;  // sem HTML
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ Copiado!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = '📋 Copiar';
+        btn.classList.remove('copied');
+      }, 2000);
+    }).catch(() => {
+      // fallback: seleciona o texto para Ctrl+C manual
+      const range = document.createRange();
+      range.selectNode(cmdText);
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+    });
+  }
+</script>
+
+</body>
+</html>

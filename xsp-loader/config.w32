@@ -1,0 +1,5 @@
+ARG_ENABLE("xsp_loader", "enable XSP loader", "no");
+if (PHP_XSP_LOADER != "no") {
+  EXTENSION("xsp_loader", "xsp_loader.c");
+  AC_DEFINE("HAVE_XSP_LOADER", 1);
+}

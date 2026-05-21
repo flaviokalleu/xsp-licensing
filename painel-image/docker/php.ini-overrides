@@ -1,0 +1,33 @@
+; XSP — endurecimento do PHP
+display_errors = Off
+display_startup_errors = Off
+log_errors = On
+expose_php = Off
+
+; include_path — permite que require/include relativos resolvam via xsp://
+include_path = ".:xsp:///var/www/html:/var/www/html"
+
+memory_limit = 256M
+max_execution_time = 60
+post_max_size = 64M
+upload_max_filesize = 64M
+
+; Permite que stream wrappers customizados sejam usados em include/require
+allow_url_include = On
+
+; Desabilita funções perigosas / utilitárias para análise
+disable_functions = exec,shell_exec,system,passthru,proc_open,popen,curl_multi_exec,parse_ini_file,show_source,phpinfo,pcntl_exec,assert,eval
+
+; Sessão
+session.cookie_httponly = 1
+session.cookie_samesite = "Lax"
+session.use_strict_mode = 1
+
+; OpCache: não escrever fonte em cache externo, não validar timestamps
+opcache.enable = 1
+opcache.enable_cli = 0
+opcache.validate_timestamps = 0
+opcache.save_comments = 0
+opcache.fast_shutdown = 1
+opcache.file_cache_only = 0
+opcache.huge_code_pages = 0

@@ -1,0 +1,181 @@
+###############################################################################
+#  XSP LICENSING — Stack completo do SERVIDOR CENTRAL
+#
+#  Sobe TUDO em containers Docker:
+#     caddy     — proxy reverso com TLS automático (Let's Encrypt)
+#     api       — api-license (Go)
+#     admin     — admin-dashboard (PHP)
+#     db        — Postgres 16
+#     redis     — Redis 7 (cache + anti-replay)
+#     registry  — Docker registry privado (htpasswd)
+#     builder   — imagem com tools de build (Python+OpenSSL) — só sob demanda
+#
+#  Uso:
+#     docker compose up -d                 # sobe tudo
+#     docker compose logs -f api           # logs
+#     docker compose down                  # para tudo
+#     docker compose --profile build run --rm builder  # roda pipeline de build
+###############################################################################
+name: xsp-licensing
+
+networks:
+  xsp:
+    driver: bridge
+  caddy:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  regdata:
+  caddydata:
+  caddyconfig:
+  api-bin:           # cache do binário Go compilado
+
+services:
+  # ────────────────── Proxy + TLS ─────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./www-public:/srv:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      API_HOST: ${API_HOST}
+      ADM_HOST: ${ADM_HOST}
+      REG_HOST: ${REG_HOST}
+      PUBLIC_HOST: ${PUBLIC_HOST}
+      PORTAL_HOST: ${PORTAL_HOST}
+    networks: [caddy, xsp]
+    depends_on:
+      - api
+      - admin
+      - portal
+      - registry
+
+  # ────────────────── api-license (Go) ────────────────────────────────────
+  api:
+    build:
+      context: ./api-license
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://xsp:${DB_PASS}@db:5432/xsp_license?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      LISTEN_ADDR: ":8443"
+      REGISTRY_URL: ${REG_HOST}
+      REGISTRY_USER: ${REG_USER}
+      REGISTRY_PASSWORD: ${REG_PASS}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [xsp]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8443/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # ────────────────── admin-dashboard (PHP) ───────────────────────────────
+  admin:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ADMIN_API_BASE: http://api:8443
+      ADMIN_API_TOKEN: ${ADMIN_TOKEN}
+      ADMIN_DASH_USER: ${ADM_USER}
+      ADMIN_DASH_PASS: ${ADM_PASS}
+      INSTALL_URL: ${INSTALL_URL:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [xsp]
+
+  # ────────────────── customer-portal (self-service do cliente) ──────────
+  portal:
+    build:
+      context: ./customer-portal
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORTAL_API_BASE: http://api:8443
+      PORTAL_MP_LINK: ${MP_RENEW_LINK:-#}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [xsp]
+
+  # ────────────────── PostgreSQL ──────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xsp
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: xsp_license
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./api-license/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "xsp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [xsp]
+
+  # ────────────────── Redis ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    networks: [xsp]
+
+  # ────────────────── Docker Registry privado ─────────────────────────────
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: "XSP Registry"
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - regdata:/var/lib/registry
+      - ./api-license/auth:/auth:ro
+    networks: [xsp]
+
+  # ────────────────── Build pipeline (sob demanda) ────────────────────────
+  builder:
+    profiles: ["build"]
+    build:
+      context: ./builder
+      dockerfile: Dockerfile
+    volumes:
+      - ../script:/panel-src:ro            # painel original
+      - ./painel-image:/painel-image:ro    # stubs + scripts
+      - ./xsp-loader:/xsp-loader           # extensão C
+      - /var/run/docker.sock:/var/run/docker.sock  # docker-out-of-docker
+      - ./builder-cache:/cache
+    environment:
+      PANEL_SRC: /panel-src
+      VERSION: ${PANEL_VERSION:-10.0.3}
+      REGISTRY: ${REG_HOST}/xsp/panel
+      API_BASE: https://${API_HOST}
+      INTERNAL_TOKEN: ${ADMIN_TOKEN}
+      REGISTRY_USER: ${REG_USER}
+      REGISTRY_PASS: ${REG_PASS}
+    networks: [xsp]

@@ -1,0 +1,103 @@
+name: Build & Publish Docker
+
+on:
+  push:
+    branches: [main, master]
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # criar release
+  packages: write   # publicar no ghcr.io
+
+jobs:
+  docker:
+    name: Build e push imagem do instalador
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login no GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/flaviokalleu/xsp-licensing
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build e push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/flaviokalleu/xsp-licensing
+            org.opencontainers.image.description=XSP Licensing — instalador do servidor central
+            org.opencontainers.image.revision=${{ github.sha }}
+
+  release:
+    name: Criar GitHub Release
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gerar tag com data
+        id: tag
+        run: echo "tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Criar release com comando de instalação
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "XSP Licensing ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Instalação na VPS
+
+            Execute este único comando como root na sua VPS:
+
+            ```bash
+            docker run --rm -it \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v /root:/root \
+              -w /root \
+              ghcr.io/flaviokalleu/xsp-licensing:latest
+            ```
+
+            ### O que ele faz
+            - Pergunta o domínio/modo de acesso (subdomínios, domínio único ou só IP)
+            - Gera todos os segredos automaticamente (Ed25519, JWT, HMAC, senhas)
+            - Sobe a stack completa: API + Admin + Portal + DB + Redis + Registry + Caddy (TLS auto)
+            - Exibe a senha do admin ao final
+
+            ### Comandos pós-instalação (em /root)
+            ```bash
+            docker compose ps          # estado dos containers
+            docker compose logs -f     # logs em tempo real
+            docker compose restart     # reinicia tudo
+            make release               # publica nova versão do painel
+            ```
+
+            ---
+            Commit: ${{ github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
