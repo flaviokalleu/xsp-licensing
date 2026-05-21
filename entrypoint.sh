@@ -3,7 +3,7 @@
 #  XSP LICENSING — Instalador do servidor central
 #  Roda dentro do container Docker; acessa o Docker do host via socket montado.
 ###############################################################################
-set -euo pipefail
+set -uo pipefail
 
 APP="/app"          # arquivos embutidos na imagem
 WORK="${PWD}"       # diretório montado do host (-w /root)
@@ -51,6 +51,18 @@ load_env
 
 MODE="${ACCESS_MODE:-}"
 
+# Variáveis com defaults para evitar erros de nounset
+PUBLIC_HOST="${PUBLIC_HOST:-}"
+API_HOST="${API_HOST:-}"
+ADM_HOST="${ADM_HOST:-}"
+PORTAL_HOST="${PORTAL_HOST:-}"
+REG_HOST="${REG_HOST:-}"
+ACME_EMAIL="${ACME_EMAIL:-}"
+ADM_USER="${ADM_USER:-admin}"
+REG_USER="${REG_USER:-license}"
+PANEL_VERSION="${PANEL_VERSION:-10.0.3}"
+INSTALL_URL="${INSTALL_URL:-}"
+
 # ── Coleta interativa (só se ainda não configurado) ───────────────────────────
 if [[ -z "$MODE" ]]; then
   echo "Como este servidor vai ser acessado?"
@@ -60,9 +72,13 @@ if [[ -z "$MODE" ]]; then
   echo
   ask() {
     local prompt="$1" var="$2" default="${3:-}"
-    printf "%s" "$prompt"
-    local val
-    IFS= read -r val </dev/tty || val=""
+    printf "%s" "$prompt" >/dev/tty
+    local val=""
+    if [ -t 0 ]; then
+      IFS= read -r val || val=""
+    else
+      IFS= read -r val </dev/tty 2>/dev/null || val=""
+    fi
     val="${val:-$default}"
     printf -v "$var" '%s' "$val"
   }
