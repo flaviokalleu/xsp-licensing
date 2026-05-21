@@ -7,13 +7,17 @@ on:
     types: [published]
 
 permissions:
-  contents: write   # criar release
-  packages: write   # publicar no ghcr.io
+  contents: write
+  packages: write
+  id-token: write
 
 jobs:
   docker:
     name: Build e push imagem do instalador
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
@@ -54,6 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
