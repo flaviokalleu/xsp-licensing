@@ -96,7 +96,7 @@ services:
       ADMIN_API_BASE: http://api:8443
       ADMIN_API_TOKEN: ${ADMIN_TOKEN}
       ADMIN_DASH_USER: ${ADM_USER}
-      ADMIN_DASH_PASS: ${ADM_PASS}
+      ADMIN_DASH_PASS: ${ADMIN_DASH_PASS}
       INSTALL_URL: ${INSTALL_URL:-}
     depends_on:
       api:
