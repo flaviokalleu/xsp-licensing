@@ -328,6 +328,25 @@ sed \
 chmod 755 "$WORK/www-public/install.sh"
 ok "www-public/install.sh pronto."
 
+# ── Configura insecure-registry no host (para make release e cliente HTTP) ───
+REGISTRY_HOST_ONLY=$(echo "$REG_HOST" | cut -d'/' -f1)
+step "Configurando insecure-registry ($REGISTRY_HOST_ONLY) no host..."
+DAEMON_JSON=/etc/docker/daemon.json
+if [[ -f "$DAEMON_JSON" ]]; then
+  if ! python3 -c "import json,sys; d=json.load(open('$DAEMON_JSON')); sys.exit(0 if '$REGISTRY_HOST_ONLY' in d.get('insecure-registries',[]) else 1)" 2>/dev/null; then
+    python3 -c "
+import json
+with open('$DAEMON_JSON') as f: d=json.load(f)
+d.setdefault('insecure-registries',[]).append('$REGISTRY_HOST_ONLY')
+with open('$DAEMON_JSON','w') as f: json.dump(d,f)
+"
+    docker kill -s HUP \$(docker ps -q) 2>/dev/null || true
+  fi
+else
+  printf '{\"insecure-registries\": [\"%s\"]}\n' "$REGISTRY_HOST_ONLY" > "$DAEMON_JSON"
+fi
+ok "insecure-registry configurado."
+
 # ── Sobe stack ────────────────────────────────────────────────────────────────
 step "Subindo stack Docker (pode levar 2-3 min na 1ª vez)..."
 cd "$WORK"

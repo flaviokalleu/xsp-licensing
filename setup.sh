@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 ###############################################################################
-#  XSP LICENSING — Bootstrap do Servidor Central
+#  XSP LICENSING — Instalador do Servidor Central (100% Docker)
 #
 #  Um único comando na VPS:
 #    curl -sSL https://raw.githubusercontent.com/flaviokalleu/xsp-licensing/master/setup.sh | sudo bash
 #
-#  O que faz:
-#    1. Instala git e docker (se faltar)
-#    2. Clona o repositório em /opt/xsp-licensing
-#    3. Executa INSTALL.sh server (interativo)
+#  Instala Docker se necessário e executa o instalador via container.
 ###############################################################################
 set -euo pipefail
 
@@ -20,50 +17,36 @@ die()  { echo "${RED}✗ ERRO:${NC} $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "Rode como root: curl -sSL ... | sudo bash"
 [[ -f /etc/os-release ]] || die "Sistema sem /etc/os-release."
 . /etc/os-release
-[[ "$ID" =~ ^(ubuntu|debian)$ ]] || die "SO não suportado: $ID"
-
-REPO_URL="https://github.com/flaviokalleu/xsp-licensing"
-INSTALL_DIR="/opt/xsp-licensing"
+[[ "$ID" =~ ^(ubuntu|debian)$ ]] || die "SO não suportado: $ID (precisa Ubuntu/Debian)."
 
 clear
 cat <<'BANNER'
  ╔══════════════════════════════════════════════════════════════════╗
- ║   XSP LICENSING — Bootstrap do Servidor Central                  ║
+ ║   XSP LICENSING — Servidor Central (100% Docker)                 ║
  ╚══════════════════════════════════════════════════════════════════╝
 BANNER
 echo
 
 export DEBIAN_FRONTEND=noninteractive
 
-# ─── git ─────────────────────────────────────────────────────────────────────
-if ! command -v git >/dev/null 2>&1; then
-  step "Instalando git..."
-  apt-get update -qq && apt-get install -y -qq git >/dev/null
-  ok "git instalado."
-else
-  ok "git já presente."
-fi
-
-# ─── docker ──────────────────────────────────────────────────────────────────
+# ─── Instala Docker se necessário ────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
   step "Instalando Docker..."
+  apt-get update -qq
+  apt-get install -y -qq ca-certificates curl >/dev/null
   curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
   systemctl enable --now docker
   ok "Docker instalado."
 else
-  ok "Docker já presente."
+  ok "Docker $(docker --version | awk '{print $3}' | tr -d ,) já presente."
 fi
 
-# ─── clona repositório ───────────────────────────────────────────────────────
-if [[ -d "$INSTALL_DIR/.git" ]]; then
-  step "Atualizando repositório em $INSTALL_DIR ..."
-  git -C "$INSTALL_DIR" pull --ff-only 2>&1 | tail -2
-else
-  step "Clonando $REPO_URL → $INSTALL_DIR ..."
-  git clone "$REPO_URL" "$INSTALL_DIR" 2>&1 | tail -2
-fi
-ok "Repositório pronto."
+# ─── Executa o instalador via container ──────────────────────────────────────
+step "Baixando e executando o instalador XSP..."
+echo
 
-# ─── instala servidor ────────────────────────────────────────────────────────
-cd "$INSTALL_DIR"
-exec bash INSTALL.sh server
+exec docker run --rm -it \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /root:/root \
+  -w /root \
+  ghcr.io/flaviokalleu/xsp-licensing:latest
