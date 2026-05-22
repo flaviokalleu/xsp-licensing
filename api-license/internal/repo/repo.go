@@ -215,6 +215,33 @@ func (r *Repo) DeactivateInstallation(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (r *Repo) ListInstallationsByLicense(ctx context.Context, licenseID uuid.UUID) ([]model.Installation, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, license_id, hwid, COALESCE(hostname,''), COALESCE(public_ip::text,''),
+		       COALESCE(domain,''), COALESCE(os,''), COALESCE(os_version,''),
+		       COALESCE(panel_version,''), COALESCE(installer_version,''), status,
+		       activated_at, last_seen_at,
+		       COALESCE(activation_ip::text,''),
+		       COALESCE(last_ip::text,''), COALESCE(last_ip_at, '1970-01-01'::timestamptz)
+		FROM installations WHERE license_id=$1 ORDER BY activated_at DESC`, licenseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []model.Installation
+	for rows.Next() {
+		var in model.Installation
+		if err := rows.Scan(&in.ID, &in.LicenseID, &in.HWID, &in.Hostname, &in.PublicIP,
+			&in.Domain, &in.OS, &in.OSVersion, &in.PanelVersion, &in.InstallerVersion,
+			&in.Status, &in.ActivatedAt, &in.LastSeenAt,
+			&in.ActivationIP, &in.LastIP, &in.LastIPAt); err != nil {
+			return nil, err
+		}
+		items = append(items, in)
+	}
+	return items, rows.Err()
+}
+
 // ===== Blacklist =====
 
 func (r *Repo) IsBlacklisted(ctx context.Context, kind, value string) (bool, error) {

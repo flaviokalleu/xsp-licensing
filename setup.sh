@@ -45,8 +45,10 @@ fi
 step "Baixando e executando o instalador XSP..."
 echo
 
+mkdir -p /etc/docker
 exec docker run --rm -it \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /root:/root \
+  -v /etc/docker:/etc/docker \
   -w /root \
   ghcr.io/flaviokalleu/xsp-licensing:latest

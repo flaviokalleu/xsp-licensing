@@ -82,7 +82,7 @@ func (p *Portal) ResetHWID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "reset"})
 }
 
-// POST /portal/installations — lista instalações ativas da licença
+// POST /portal/installations — lista instalações da licença
 func (p *Portal) Installations(c *fiber.Ctx) error {
 	var req portalAuthReq
 	if err := c.BodyParser(&req); err != nil {
@@ -92,13 +92,31 @@ func (p *Portal) Installations(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(404, "license_not_found")
 	}
-	// Como repo.ListInstallations não foi criado, retornamos resumo simples.
-	// Em produção, expor lista completa via SELECT dedicado.
-	_ = lic
-	return c.JSON(fiber.Map{
-		"items":   []any{},
-		"message": "Consulte o suporte para detalhes das instalações.",
-	})
+	items, err := p.repo.ListInstallationsByLicense(c.Context(), lic.ID)
+	if err != nil {
+		return fiber.NewError(500, "internal")
+	}
+	type instItem struct {
+		ID           string    `json:"id"`
+		Status       string    `json:"status"`
+		Hostname     string    `json:"hostname"`
+		Domain       string    `json:"domain"`
+		PublicIP     string    `json:"public_ip"`
+		OS           string    `json:"os"`
+		PanelVersion string    `json:"panel_version"`
+		ActivatedAt  time.Time `json:"activated_at"`
+		LastSeenAt   time.Time `json:"last_seen_at"`
+	}
+	out := make([]instItem, 0, len(items))
+	for _, in := range items {
+		out = append(out, instItem{
+			ID: in.ID.String(), Status: in.Status,
+			Hostname: in.Hostname, Domain: in.Domain, PublicIP: in.PublicIP,
+			OS: in.OS, PanelVersion: in.PanelVersion,
+			ActivatedAt: in.ActivatedAt, LastSeenAt: in.LastSeenAt,
+		})
+	}
+	return c.JSON(fiber.Map{"items": out, "total": len(out)})
 }
 
 // helper — busca licença pelo hash da KEY (mesmo que activate)
