@@ -29,8 +29,12 @@ function xsp_env(string $k, string $def = ''): string {
 }
 
 function xsp_compute_hwid(): string {
-    // Canonical HWID: sha256( machine_id || 0x1f || board_uuid || 0x1f || disk_uuid || 0x1f || mac )
-    // DEVE bater com o cálculo no installer (bash/Go) — não mexer sem atualizar os outros.
+    // Usa o HWID gravado pelo installer no .env — garante que bate com o valor
+    // usado na ativação (o container não tem acesso ao blkid do host).
+    $stored = xsp_env('XSP_HWID');
+    if ($stored !== '') return $stored;
+
+    // Fallback: recalcula (só funciona se rodando fora de container)
     $machineId = @trim((string)file_get_contents('/etc/machine-id'));
     $mac = '';
     foreach (glob('/sys/class/net/*/address') ?: [] as $f) {
