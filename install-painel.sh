@@ -314,29 +314,40 @@ if [[ -f "$INSTALL_PATH/.env" ]]; then
 fi
 
 # ─── coleta interativa ───────────────────────────────────────────────────────
-# Abre /dev/tty apenas se não foram passados args e stdin não é terminal
-if [[ ! -t 0 && -z "${ARG_KEY}${ARG_DOMAIN}${ARG_EMAIL}" ]]; then
-  exec </dev/tty 2>/dev/null || true
+# Detecta se stdin é um terminal (interativo) ou pipe (não-interativo, ex: curl|bash)
+_INTERACTIVE=false
+if [[ -t 0 ]]; then
+  _INTERACTIVE=true
+elif exec </dev/tty 2>/dev/null; then
+  _INTERACTIVE=true
 fi
 
 LICENSE_KEY=$(echo "${ARG_KEY:-}" | tr '[:lower:]' '[:upper:]' | tr -d ' ')
 if [[ -z "$LICENSE_KEY" ]]; then
-  read -rp "KEY (formato XSP-XXXX-XXXX-XXXX-XXXX): " LICENSE_KEY
-  LICENSE_KEY=$(echo "$LICENSE_KEY" | tr '[:lower:]' '[:upper:]' | tr -d ' ')
+  if [[ "$_INTERACTIVE" == "true" ]]; then
+    read -rp "KEY (formato XSP-XXXX-XXXX-XXXX-XXXX): " LICENSE_KEY
+    LICENSE_KEY=$(echo "$LICENSE_KEY" | tr '[:lower:]' '[:upper:]' | tr -d ' ')
+  fi
 fi
 [[ "$LICENSE_KEY" =~ ^XSP-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$ ]] \
   || die "KEY inválida: '$LICENSE_KEY'. Formato esperado: XSP-XXXX-XXXX-XXXX-XXXX"
 
 PANEL_DOMAIN="${ARG_DOMAIN:-}"
-if [[ -z "$PANEL_DOMAIN" ]]; then
+if [[ -z "$PANEL_DOMAIN" && "$_INTERACTIVE" == "true" ]]; then
   read -rp "Domínio ou IP público do painel (ex: painel.cliente.com ou 1.2.3.4): " PANEL_DOMAIN
 fi
-[[ -n "$PANEL_DOMAIN" ]] || die "Domínio/IP obrigatório."
+# Fallback automático: usa IP público da máquina
+if [[ -z "$PANEL_DOMAIN" ]]; then
+  PANEL_DOMAIN=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+fi
+[[ -n "$PANEL_DOMAIN" ]] || die "Não foi possível detectar o IP da máquina."
 
 ADMIN_EMAIL="${ARG_EMAIL:-}"
-if [[ -z "$ADMIN_EMAIL" ]]; then
+if [[ -z "$ADMIN_EMAIL" && "$_INTERACTIVE" == "true" ]]; then
   read -rp "E-mail do administrador: " ADMIN_EMAIL
 fi
+# Fallback: e-mail genérico
+[[ -n "$ADMIN_EMAIL" ]] || ADMIN_EMAIL="admin@${PANEL_DOMAIN}"
 [[ "$ADMIN_EMAIL" =~ @ ]] || die "E-mail inválido: '$ADMIN_EMAIL'"
 echo
 
