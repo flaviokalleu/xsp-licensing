@@ -87,11 +87,13 @@ func (r *Repo) ExtendLicense(ctx context.Context, id uuid.UUID, until time.Time)
 
 func (r *Repo) ListLicenses(ctx context.Context, limit, offset int) ([]model.License, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT l.id, l.customer_id, l.plan_id, p.code, l.key, l.key_hash, l.status,
+		SELECT l.id, l.customer_id, COALESCE(c.email,''), COALESCE(c.name,''),
+		       l.plan_id, p.code, l.key, l.key_hash, l.status,
 		       l.expires_at, l.max_instances, l.grace_period_h, COALESCE(l.notes,''),
 		       l.created_at, l.updated_at
 		FROM licenses l
 		JOIN plans p ON p.id = l.plan_id
+		LEFT JOIN customers c ON c.id = l.customer_id
 		ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, err
@@ -100,7 +102,8 @@ func (r *Repo) ListLicenses(ctx context.Context, limit, offset int) ([]model.Lic
 	var out []model.License
 	for rows.Next() {
 		var l model.License
-		if err := rows.Scan(&l.ID, &l.CustomerID, &l.PlanID, &l.PlanCode, &l.Key, &l.KeyHash,
+		if err := rows.Scan(&l.ID, &l.CustomerID, &l.CustomerEmail, &l.CustomerName,
+			&l.PlanID, &l.PlanCode, &l.Key, &l.KeyHash,
 			&l.Status, &l.ExpiresAt, &l.MaxInstances, &l.GracePeriodH, &l.Notes,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, err

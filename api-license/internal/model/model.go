@@ -28,6 +28,8 @@ type Plan struct {
 type License struct {
 	ID            uuid.UUID  `json:"id"`
 	CustomerID    uuid.UUID  `json:"customer_id"`
+	CustomerEmail string     `json:"customer_email,omitempty"`
+	CustomerName  string     `json:"customer_name,omitempty"`
 	PlanID        int        `json:"plan_id"`
 	PlanCode      string     `json:"plan_code"`
 	Key           string     `json:"key,omitempty"`

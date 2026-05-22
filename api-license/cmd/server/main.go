@@ -98,6 +98,8 @@ func main() {
 	a.Patch("/keys/:id", adm.UpdateKey)
 	a.Post("/blacklist", adm.AddBlacklist)
 	a.Post("/releases", adm.PutRelease)
+	a.Get("/keys/:id/installations", adm.GetKeyInstallations)
+	a.Delete("/installations/:id", adm.DeactivateInstallation)
 
 	// Graceful shutdown
 	go func() {

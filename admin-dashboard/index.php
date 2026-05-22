@@ -1,13 +1,13 @@
 <?php
 /**
- * XSP Admin Dashboard — painel para gerenciar licenças.
+ * XSP Admin Dashboard
  *
- * Variáveis de ambiente:
+ * Env vars:
  *   ADMIN_API_BASE    ex: http://api:8443
- *   ADMIN_API_TOKEN   mesmo ADMIN_TOKEN da api-license
+ *   ADMIN_API_TOKEN   ADMIN_TOKEN da api-license
  *   ADMIN_DASH_USER   usuário do dashboard
  *   ADMIN_DASH_PASS   senha (bcrypt ou plaintext)
- *   INSTALL_URL       URL do install.sh público (ex: https://painel.dom.com/install.sh)
+ *   INSTALL_URL       URL do install.sh público
  */
 
 declare(strict_types=1);
@@ -65,17 +65,26 @@ function api(string $method, string $path, array $body = null): array {
     return ['code' => $c, 'body' => json_decode((string)$r, true) ?: ['raw' => $r]];
 }
 
+/* ---------- JSON endpoint for installations ---------- */
+if ($logged && ($_GET['ajax'] ?? '') === 'installations') {
+    $lid = preg_replace('/[^a-f0-9\-]/', '', $_GET['lid'] ?? '');
+    $r   = api('GET', '/admin/keys/' . $lid . '/installations');
+    header('Content-Type: application/json');
+    echo json_encode($r['body']);
+    exit;
+}
+
 /* ---------- actions ---------- */
 $flash  = null;
-$newKey = null;   // KEY gerada nesta requisição (para mostrar o comando)
+$newKey = null;
 
 if ($logged && ($_POST['action'] ?? '') === 'create_key') {
     $r = api('POST', '/admin/keys', [
-        'email'       => trim($_POST['email']  ?? ''),
-        'name'        => trim($_POST['name']   ?? ''),
-        'plan_code'   => $_POST['plan']        ?? 'basic',
-        'period_days' => (int)($_POST['days']  ?? 30),
-        'max_instances' => 1,   // uso único por padrão
+        'email'         => trim($_POST['email']  ?? ''),
+        'name'          => trim($_POST['name']   ?? ''),
+        'plan_code'     => $_POST['plan']        ?? 'basic',
+        'period_days'   => (int)($_POST['days']  ?? 30),
+        'max_instances' => (int)($_POST['max_instances'] ?? 1),
     ]);
     if ($r['code'] === 201) {
         $newKey = $r['body']['key'] ?? '';
@@ -92,9 +101,12 @@ if ($logged && ($_POST['action'] ?? '') === 'revoke') {
 }
 
 if ($logged && ($_POST['action'] ?? '') === 'extend') {
+    $days = max(1, (int)($_POST['days'] ?? 30));
     $r = api('PATCH', '/admin/keys/' . ($_POST['id'] ?? ''),
-        ['extend_days' => (int)($_POST['days'] ?? 30)]);
-    $flash = $r['code'] < 300 ? ['ok', 'Validade estendida.'] : ['err', json_encode($r['body'])];
+        ['extend_days' => $days]);
+    $flash = $r['code'] < 300
+        ? ['ok', "Validade estendida em {$days} dia(s)."]
+        : ['err', json_encode($r['body'])];
 }
 
 if ($logged && ($_POST['action'] ?? '') === 'blacklist') {
@@ -106,10 +118,27 @@ if ($logged && ($_POST['action'] ?? '') === 'blacklist') {
     $flash = $r['code'] < 300 ? ['ok', 'Bloqueado.'] : ['err', json_encode($r['body'])];
 }
 
+if ($logged && ($_POST['action'] ?? '') === 'deactivate_install') {
+    $iid = preg_replace('/[^a-f0-9\-]/', '', $_POST['install_id'] ?? '');
+    $r   = api('DELETE', '/admin/installations/' . $iid);
+    $flash = $r['code'] < 300 ? ['ok', 'Instalação desativada.'] : ['err', json_encode($r['body'])];
+}
+
 $licenses = [];
 if ($logged) {
-    $r = api('GET', '/admin/keys?limit=100&offset=0');
+    $r = api('GET', '/admin/keys?limit=500&offset=0');
     if ($r['code'] === 200) $licenses = $r['body']['items'] ?? [];
+}
+
+/* ---------- stats ---------- */
+$stats = ['total' => 0, 'active' => 0, 'expired' => 0, 'revoked' => 0, 'trial' => 0];
+foreach ($licenses as $l) {
+    $stats['total']++;
+    $s = $l['status'] ?? '';
+    if ($s === 'active')   $stats['active']++;
+    if ($s === 'expired')  $stats['expired']++;
+    if ($s === 'revoked')  $stats['revoked']++;
+    if (($l['plan_code'] ?? '') === 'trial') $stats['trial']++;
 }
 
 /* ---------- helpers ---------- */
@@ -117,6 +146,7 @@ function installCmd(string $key, string $url): string {
     if (!$url) return '';
     return "curl -sSL {$url} | sudo bash -s -- {$key}";
 }
+function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -127,39 +157,57 @@ function installCmd(string $key, string $url): string {
 <style>
 :root {
     --bg:#0b1020; --fg:#e6edf3; --mut:#7d8590;
-    --accent:#3fb950; --danger:#f85149;
+    --accent:#3fb950; --danger:#f85149; --warn:#d29922;
     --card:#161b22; --border:#30363d; --hl:#1c2333;
+    --modal-bg:rgba(0,0,0,.7);
 }
-* { box-sizing:border-box; }
+* { box-sizing:border-box; margin:0; padding:0; }
 body { background:var(--bg); color:var(--fg);
        font-family:system-ui,-apple-system,sans-serif;
-       margin:0; padding:24px; max-width:1400px; margin:auto; }
-h1,h2 { margin:0 0 16px; }
-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+       padding:24px; max-width:1500px; margin:auto; }
+h1,h2,h3 { margin-bottom:16px; }
+header { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; }
 .btn { background:var(--accent); border:none; color:#0b1020;
-       padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600; }
-.btn.danger { background:var(--danger); color:#fff; }
-.btn.ghost  { background:transparent; color:var(--fg); border:1px solid var(--border); }
-.btn.copy   { background:#21262d; color:var(--fg); border:1px solid var(--border);
+       padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px; }
+.btn.danger  { background:var(--danger); color:#fff; }
+.btn.ghost   { background:transparent; color:var(--fg); border:1px solid var(--border); }
+.btn.copy    { background:#21262d; color:var(--fg); border:1px solid var(--border);
                font-size:12px; padding:4px 10px; }
+.btn.sm      { padding:4px 10px; font-size:12px; }
 .card { background:var(--card); border:1px solid var(--border);
         border-radius:8px; padding:18px; margin-bottom:16px; }
 .card.highlight { border-color:var(--accent); }
 .row { display:flex; gap:10px; flex-wrap:wrap; }
-.row > * { flex:1; min-width:140px; }
+.row > * { flex:1; min-width:130px; }
 input, select { background:#0d1117; color:var(--fg); border:1px solid var(--border);
-                padding:8px; border-radius:6px; width:100%; }
+                padding:8px; border-radius:6px; width:100%; font-size:13px; }
+input:focus, select:focus { outline:none; border-color:var(--accent); }
+
+/* ── Stats cards ── */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:20px; }
+.stat { background:var(--card); border:1px solid var(--border); border-radius:8px;
+        padding:16px; text-align:center; }
+.stat .num { font-size:28px; font-weight:700; line-height:1; margin-bottom:4px; }
+.stat .lbl { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+.stat.s-active  .num { color:var(--accent); }
+.stat.s-expired .num { color:var(--warn); }
+.stat.s-revoked .num { color:var(--danger); }
+
+/* ── Table ── */
 table { width:100%; border-collapse:collapse; font-size:13px; }
-th, td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+th, td { padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
 th { background:#0d1117; color:var(--mut); font-weight:600; font-size:11px;
-     text-transform:uppercase; letter-spacing:.5px; }
+     text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+tr.inst-row td { background:#111827; font-size:12px; padding:0; }
+tr.inst-row td > div { padding:10px 14px; }
 code { background:#0d1117; padding:2px 6px; border-radius:4px; font-size:12px; }
 .badge { display:inline-block; padding:2px 8px; border-radius:999px;
          font-size:11px; font-weight:600; text-transform:uppercase; }
-.badge.active    { background:#1f6f3f; color:#d3ffd3; }
-.badge.expired   { background:#754200; color:#ffe1b2; }
-.badge.revoked   { background:#6e1e1e; color:#ffd2d2; }
-.badge.suspended { background:#3a3a3a; color:#ccc; }
+.badge.active     { background:#1f6f3f; color:#d3ffd3; }
+.badge.expired    { background:#754200; color:#ffe1b2; }
+.badge.revoked    { background:#6e1e1e; color:#ffd2d2; }
+.badge.suspended  { background:#3a3a3a; color:#ccc; }
+.badge.deactivated{ background:#3a3a3a; color:#999; }
 .flash.ok  { background:#1f6f3f; color:#d3ffd3; padding:10px 14px;
              border-radius:6px; margin-bottom:16px; }
 .flash.err { background:#6e1e1e; color:#ffd2d2; padding:10px 14px;
@@ -167,22 +215,42 @@ code { background:#0d1117; padding:2px 6px; border-radius:4px; font-size:12px; }
 .muted { color:var(--mut); font-size:12px; }
 form.inline { display:inline; }
 
-/* Caixa de comando de instalação */
-.install-box {
-    background:#0d1117; border:1px solid var(--accent);
-    border-radius:6px; padding:12px 14px;
-    font-family:monospace; font-size:13px;
-    word-break:break-all; position:relative;
-}
-.install-box-sm {
-    background:#0d1117; border:1px solid var(--border);
-    border-radius:4px; padding:6px 10px;
-    font-family:monospace; font-size:11px;
-    word-break:break-all; max-width:480px;
-}
+.install-box { background:#0d1117; border:1px solid var(--accent);
+    border-radius:6px; padding:12px 14px; font-family:monospace; font-size:13px;
+    word-break:break-all; }
+.install-box-sm { background:#0d1117; border:1px solid var(--border);
+    border-radius:4px; padding:5px 9px; font-family:monospace; font-size:11px;
+    word-break:break-all; max-width:460px; }
 .copy-row { display:flex; align-items:flex-start; gap:8px; }
 .copy-row .install-box { flex:1; }
-.copied { color:var(--accent); font-size:11px; display:none; }
+.copied { color:var(--accent); font-size:11px; }
+
+/* ── Filters ── */
+.filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+.filters input, .filters select { flex:1; min-width:150px; max-width:240px; }
+.filters label { font-size:12px; color:var(--mut); margin-right:-4px; }
+
+/* ── Expand toggle ── */
+.expand-btn { background:none; border:none; color:var(--accent); cursor:pointer;
+              font-size:16px; line-height:1; padding:0 4px; }
+
+/* ── Modal ── */
+.modal-overlay { display:none; position:fixed; inset:0; background:var(--modal-bg);
+                 z-index:1000; justify-content:center; align-items:center; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--card); border:1px solid var(--border); border-radius:10px;
+         padding:24px; width:360px; max-width:96vw; }
+.modal h3 { margin-bottom:16px; }
+.modal .row { margin-bottom:12px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+
+/* ── Inst mini-table ── */
+.inst-table { width:100%; border-collapse:collapse; font-size:12px; }
+.inst-table th { background:#0d1117; color:var(--mut); padding:5px 8px; font-size:10px;
+                 text-transform:uppercase; letter-spacing:.4px; }
+.inst-table td { padding:5px 8px; border-bottom:1px solid #1e2535; vertical-align:middle; }
+.online  { color:var(--accent); }
+.offline { color:var(--mut); }
 </style>
 </head>
 <body>
@@ -191,13 +259,13 @@ form.inline { display:inline; }
 <div class="card" style="max-width:380px;margin:80px auto;">
   <h1>XSP Admin</h1>
   <?php if (!empty($loginErr)): ?>
-    <div class="flash err"><?= htmlspecialchars($loginErr) ?></div>
+    <div class="flash err"><?= h($loginErr) ?></div>
   <?php endif; ?>
   <form method="post">
     <input type="hidden" name="action" value="login">
-    <p><input type="text"     name="user" placeholder="usuário" required autofocus></p>
-    <p><input type="password" name="pass" placeholder="senha"   required></p>
-    <p><button class="btn" type="submit">Entrar</button></p>
+    <p style="margin-bottom:10px"><input type="text"     name="user" placeholder="usuário" required autofocus></p>
+    <p style="margin-bottom:14px"><input type="password" name="pass" placeholder="senha"   required></p>
+    <button class="btn" type="submit">Entrar</button>
   </form>
 </div>
 
@@ -209,131 +277,193 @@ form.inline { display:inline; }
 </header>
 
 <?php if ($flash): ?>
-  <div class="flash <?= $flash[0] ?>"><?= htmlspecialchars((string)$flash[1]) ?></div>
+  <div class="flash <?= $flash[0] ?>"><?= h((string)$flash[1]) ?></div>
 <?php endif; ?>
 
-<?php /* ── KEY recém-gerada: mostra o comando de instalação em destaque ── */ ?>
+<!-- ── Stats ── -->
+<div class="stats">
+  <div class="stat">
+    <div class="num"><?= $stats['total'] ?></div>
+    <div class="lbl">Total</div>
+  </div>
+  <div class="stat s-active">
+    <div class="num"><?= $stats['active'] ?></div>
+    <div class="lbl">Ativas</div>
+  </div>
+  <div class="stat s-expired">
+    <div class="num"><?= $stats['expired'] ?></div>
+    <div class="lbl">Expiradas</div>
+  </div>
+  <div class="stat s-revoked">
+    <div class="num"><?= $stats['revoked'] ?></div>
+    <div class="lbl">Revogadas</div>
+  </div>
+  <div class="stat">
+    <div class="num"><?= $stats['trial'] ?></div>
+    <div class="lbl">Trial</div>
+  </div>
+</div>
+
+<!-- ── KEY recém-gerada ── -->
 <?php if ($newKey && $INSTALL_URL): ?>
 <div class="card highlight">
-  <h2>🎉 KEY gerada — envie este comando ao cliente</h2>
-  <p>O cliente deve executar este comando na VPS dele (Ubuntu/Debian):</p>
+  <h2>KEY gerada — envie este comando ao cliente</h2>
+  <p style="margin-bottom:10px">Execute na VPS do cliente:</p>
   <div class="copy-row">
-    <div class="install-box" id="newcmd"><?= htmlspecialchars(installCmd($newKey, $INSTALL_URL)) ?></div>
-    <button class="btn" onclick="copyText('newcmd', 'newcmd-ok')">Copiar</button>
+    <div class="install-box" id="newcmd"><?= h(installCmd($newKey, $INSTALL_URL)) ?></div>
+    <button class="btn" onclick="copyText('newcmd','newcmd-ok')">Copiar</button>
   </div>
-  <span class="copied" id="newcmd-ok">✓ Copiado!</span>
-  <p class="muted" style="margin-top:12px;">
-    ⚠ KEY: <strong><?= htmlspecialchars($newKey) ?></strong> — válida para <strong>1 instalação</strong>.
-    Após ativada, fica vinculada àquela VPS.
-  </p>
+  <span class="copied" id="newcmd-ok" style="display:none">✓ Copiado!</span>
+  <p class="muted" style="margin-top:10px">KEY: <strong><?= h($newKey) ?></strong></p>
 </div>
 <?php elseif ($newKey): ?>
 <div class="card highlight">
   <h2>KEY gerada</h2>
-  <code><?= htmlspecialchars($newKey) ?></code>
+  <code><?= h($newKey) ?></code>
   <p class="muted">Configure INSTALL_URL no .env para ver o comando completo.</p>
 </div>
 <?php endif; ?>
 
-<?php /* ── Criar nova KEY ── */ ?>
+<!-- ── Criar nova KEY ── -->
 <div class="card">
   <h2>Criar nova licença</h2>
   <form method="post">
     <input type="hidden" name="action" value="create_key">
-    <div class="row">
+    <div class="row" style="margin-bottom:8px">
       <input type="email"  name="email" placeholder="cliente@exemplo.com" required>
       <input type="text"   name="name"  placeholder="Nome do cliente">
       <select name="plan">
         <option value="trial">Trial (7 dias)</option>
-        <option value="basic" selected>Básico (30 dias)</option>
-        <option value="pro">Profissional (30 dias)</option>
-        <option value="enterprise">Enterprise (30 dias)</option>
+        <option value="basic" selected>Básico</option>
+        <option value="pro">Profissional</option>
+        <option value="enterprise">Enterprise</option>
       </select>
-      <input type="number" name="days" value="30" min="1" max="365" title="Dias de validade">
+      <input type="number" name="days" value="30" min="1" max="730" placeholder="Dias">
+      <select name="max_instances">
+        <option value="1" selected>1 instalação</option>
+        <option value="2">2 instalações</option>
+        <option value="5">5 instalações</option>
+        <option value="10">10 instalações</option>
+      </select>
       <button class="btn" type="submit">Gerar KEY</button>
     </div>
-    <p class="muted" style="margin-top:8px;">Cada KEY gerada permite exatamente 1 instalação.</p>
   </form>
 </div>
 
-<?php /* ── Lista de licenças ── */ ?>
+<!-- ── Lista de licenças ── -->
 <div class="card">
-  <h2>Licenças (<?= count($licenses) ?>)</h2>
-  <table>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0">Licenças</h2>
+    <span class="muted" id="visible-count"></span>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filters">
+    <input id="f-search" type="search" placeholder="Buscar KEY, email, nome…" oninput="filterTable()">
+    <select id="f-status" onchange="filterTable()">
+      <option value="">Todos os status</option>
+      <option value="active">Ativas</option>
+      <option value="expired">Expiradas</option>
+      <option value="revoked">Revogadas</option>
+      <option value="suspended">Suspensas</option>
+    </select>
+    <select id="f-plan" onchange="filterTable()">
+      <option value="">Todos os planos</option>
+      <option value="trial">Trial</option>
+      <option value="basic">Básico</option>
+      <option value="pro">Pro</option>
+      <option value="enterprise">Enterprise</option>
+    </select>
+  </div>
+
+  <div style="overflow-x:auto">
+  <table id="lic-table">
     <thead>
       <tr>
+        <th></th>
         <th>KEY</th>
         <th>Cliente</th>
         <th>Plano</th>
         <th>Status</th>
         <th>Expira</th>
-        <th>Criada</th>
-        <?php if ($INSTALL_URL): ?><th>Comando instalação</th><?php endif; ?>
+        <th>Inst.</th>
+        <?php if ($INSTALL_URL): ?><th>Comando</th><?php endif; ?>
         <th>Ações</th>
       </tr>
     </thead>
     <tbody>
     <?php foreach ($licenses as $i => $l):
-        $key    = (string)($l['key']    ?? '???');
-        $keyId  = (string)($l['id']     ?? '');
-        $status = (string)($l['status'] ?? '');
-        $expIn  = max(0, (int)((strtotime((string)$l['expires_at']) - time()) / 86400));
+        $key    = (string)($l['key']      ?? '???');
+        $keyId  = (string)($l['id']       ?? '');
+        $status = (string)($l['status']   ?? '');
+        $email  = (string)($l['customer_email'] ?? $l['email'] ?? '');
+        $name   = (string)($l['customer_name']  ?? '');
+        $plan   = (string)($l['plan_code'] ?? '');
+        $maxI   = (int)($l['max_instances'] ?? 1);
+        $exp    = (string)($l['expires_at'] ?? '');
+        $expD   = $exp ? max(0, (int)(((int)strtotime($exp) - time()) / 86400)) : 0;
         $cmd    = ($INSTALL_URL && $status === 'active') ? installCmd($key, $INSTALL_URL) : '';
-        $cid    = 'cmd' . $i;
+        $cid    = 'cmd'.$i;
+        $rid    = 'row'.$i;
+        $iid    = 'inst'.$i;
+        $search = strtolower($key.' '.$email.' '.$name.' '.$status.' '.$plan);
     ?>
-      <tr>
-        <td><code><?= htmlspecialchars($key) ?></code></td>
+      <tr id="<?= $rid ?>" data-search="<?= h($search) ?>" data-status="<?= h($status) ?>" data-plan="<?= h($plan) ?>">
         <td>
-          <?= htmlspecialchars((string)($l['customer_email'] ?? $l['email'] ?? '')) ?>
-          <?php if (!empty($l['customer_name'])): ?>
-            <div class="muted"><?= htmlspecialchars((string)$l['customer_name']) ?></div>
+          <button class="expand-btn" title="Ver instalações"
+                  onclick="toggleInst('<?= $iid ?>','<?= h($keyId) ?>',this)">▶</button>
+        </td>
+        <td><code><?= h($key) ?></code></td>
+        <td>
+          <?= h($email) ?>
+          <?php if ($name): ?><div class="muted"><?= h($name) ?></div><?php endif; ?>
+        </td>
+        <td><?= h($plan) ?></td>
+        <td><span class="badge <?= h($status) ?>"><?= h($status) ?></span></td>
+        <td>
+          <?= h(substr($exp, 0, 10)) ?>
+          <?php if ($status === 'active'): ?>
+            <div class="muted"><?= $expD ?> dias</div>
           <?php endif; ?>
         </td>
-        <td><?= htmlspecialchars((string)($l['plan_code'] ?? '')) ?></td>
-        <td><span class="badge <?= htmlspecialchars($status) ?>"><?= htmlspecialchars($status) ?></span></td>
-        <td>
-          <?= htmlspecialchars(substr((string)$l['expires_at'], 0, 10)) ?>
-          <div class="muted"><?= $expIn ?> dias</div>
-        </td>
-        <td><?= htmlspecialchars(substr((string)$l['created_at'], 0, 10)) ?></td>
+        <td style="text-align:center"><?= $maxI ?></td>
 
         <?php if ($INSTALL_URL): ?>
         <td>
           <?php if ($cmd): ?>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div class="install-box-sm" id="<?= $cid ?>"><?= htmlspecialchars($cmd) ?></div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div class="install-box-sm" id="<?= $cid ?>"><?= h($cmd) ?></div>
             <button class="btn copy" onclick="copyText('<?= $cid ?>','<?= $cid ?>-ok')">Copiar</button>
           </div>
-          <span class="copied" id="<?= $cid ?>-ok">✓</span>
-          <?php else: ?>
-          <span class="muted">—</span>
-          <?php endif; ?>
+          <span class="copied" id="<?= $cid ?>-ok" style="display:none">✓</span>
+          <?php else: ?><span class="muted">—</span><?php endif; ?>
         </td>
         <?php endif; ?>
 
-        <td>
+        <td style="white-space:nowrap">
           <?php if ($status === 'active'): ?>
           <form class="inline" method="post" onsubmit="return confirm('Revogar esta KEY?');">
             <input type="hidden" name="action" value="revoke">
-            <input type="hidden" name="id" value="<?= htmlspecialchars($keyId) ?>">
+            <input type="hidden" name="id"     value="<?= h($keyId) ?>">
             <input type="hidden" name="reason" value="admin">
-            <button class="btn danger" type="submit">Revogar</button>
+            <button class="btn danger sm" type="submit">Revogar</button>
           </form>
-          <form class="inline" method="post">
-            <input type="hidden" name="action" value="extend">
-            <input type="hidden" name="id" value="<?= htmlspecialchars($keyId) ?>">
-            <input type="hidden" name="days" value="30">
-            <button class="btn ghost" type="submit">+30d</button>
-          </form>
+          <button class="btn ghost sm" onclick="openExtend('<?= h($keyId) ?>')">Estender</button>
           <?php endif; ?>
+        </td>
+      </tr>
+      <tr class="inst-row" id="<?= $iid ?>" style="display:none">
+        <td colspan="<?= $INSTALL_URL ? 9 : 8 ?>">
+          <div id="<?= $iid ?>-content"><span class="muted" style="padding:8px;display:block">Carregando…</span></div>
         </td>
       </tr>
     <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
 </div>
 
-<?php /* ── Blacklist ── */ ?>
+<!-- ── Blacklist ── -->
 <div class="card">
   <h2>Blacklist</h2>
   <form method="post">
@@ -353,7 +483,6 @@ form.inline { display:inline; }
   </form>
 </div>
 
-<?php /* ── Próximos passos se INSTALL_URL não estiver configurado ── */ ?>
 <?php if (!$INSTALL_URL): ?>
 <div class="card" style="border-color:#754200;">
   <p class="muted">⚠ <strong>INSTALL_URL</strong> não configurado — os comandos de instalação não aparecerão.
@@ -361,9 +490,31 @@ form.inline { display:inline; }
 </div>
 <?php endif; ?>
 
-<p class="muted">XSP Admin · API: <?= htmlspecialchars($API) ?></p>
+<p class="muted" style="margin-top:8px">XSP Admin · API: <?= h($API) ?></p>
+
+<!-- ── Modal: estender validade ── -->
+<div class="modal-overlay" id="extend-modal">
+  <div class="modal">
+    <h3>Estender validade</h3>
+    <form method="post" id="extend-form">
+      <input type="hidden" name="action" value="extend">
+      <input type="hidden" name="id"     id="extend-id">
+      <div class="row">
+        <div>
+          <label style="font-size:12px;color:var(--mut)">Dias a adicionar</label>
+          <input type="number" name="days" id="extend-days" value="30" min="1" max="730" required style="margin-top:4px">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" onclick="closeExtend()">Cancelar</button>
+        <button type="submit" class="btn">Confirmar</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script>
+/* ── copy ── */
 function copyText(srcId, okId) {
     const text = document.getElementById(srcId).textContent.trim();
     navigator.clipboard.writeText(text).then(() => {
@@ -371,6 +522,118 @@ function copyText(srcId, okId) {
         el.style.display = 'inline';
         setTimeout(() => el.style.display = 'none', 2000);
     });
+}
+
+/* ── extend modal ── */
+function openExtend(id) {
+    document.getElementById('extend-id').value = id;
+    document.getElementById('extend-days').value = 30;
+    document.getElementById('extend-modal').classList.add('open');
+    document.getElementById('extend-days').focus();
+}
+function closeExtend() {
+    document.getElementById('extend-modal').classList.remove('open');
+}
+document.getElementById('extend-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeExtend();
+});
+
+/* ── filter ── */
+function filterTable() {
+    const q     = document.getElementById('f-search').value.toLowerCase();
+    const fSt   = document.getElementById('f-status').value;
+    const fPl   = document.getElementById('f-plan').value;
+    const rows  = document.querySelectorAll('#lic-table tbody tr:not(.inst-row)');
+    let vis = 0;
+    rows.forEach(tr => {
+        const ok = (!q   || tr.dataset.search.includes(q))
+                && (!fSt || tr.dataset.status === fSt)
+                && (!fPl || tr.dataset.plan   === fPl);
+        tr.style.display = ok ? '' : 'none';
+        // hide the paired inst-row too
+        const inst = tr.nextElementSibling;
+        if (inst && inst.classList.contains('inst-row') && !ok) inst.style.display = 'none';
+        if (ok) vis++;
+    });
+    document.getElementById('visible-count').textContent = vis + ' licença(s)';
+}
+filterTable();
+
+/* ── expand installations ── */
+const instCache = {};
+async function toggleInst(iid, lid, btn) {
+    const row     = document.getElementById(iid);
+    const content = document.getElementById(iid + '-content');
+    const open    = row.style.display !== 'none';
+    if (open) {
+        row.style.display = 'none';
+        btn.textContent = '▶';
+        return;
+    }
+    row.style.display = '';
+    btn.textContent = '▼';
+    if (instCache[lid]) { content.innerHTML = instCache[lid]; return; }
+    try {
+        const res  = await fetch('?ajax=installations&lid=' + encodeURIComponent(lid));
+        const data = await res.json();
+        const items = data.items || data || [];
+        if (!items.length) {
+            content.innerHTML = '<span class="muted" style="padding:8px;display:block">Nenhuma instalação ativa.</span>';
+            instCache[lid] = content.innerHTML;
+            return;
+        }
+        let html = '<table class="inst-table"><thead><tr>'
+            + '<th>ID</th><th>Hostname</th><th>IP</th><th>Domínio</th>'
+            + '<th>OS</th><th>Versão painel</th><th>Status</th>'
+            + '<th>Ativado</th><th>Último ping</th><th></th>'
+            + '</tr></thead><tbody>';
+        const now = Date.now();
+        items.forEach(inst => {
+            const lastSeen  = new Date(inst.last_seen_at).getTime();
+            const online    = (now - lastSeen) < 10 * 60 * 1000;
+            const ping      = timeSince(inst.last_seen_at);
+            const activated = inst.activated_at ? inst.activated_at.slice(0,10) : '—';
+            const statusBadge = `<span class="badge ${inst.status}">${inst.status}</span>`;
+            const deactBtn = inst.status === 'active'
+                ? `<form method="post" style="display:inline" onsubmit="return confirm('Desativar esta instalação?')">
+                     <input type="hidden" name="action"     value="deactivate_install">
+                     <input type="hidden" name="install_id" value="${inst.id}">
+                     <button class="btn danger sm" type="submit">Desativar</button>
+                   </form>` : '';
+            html += `<tr>
+                <td><code style="font-size:10px">${inst.id.slice(0,8)}…</code></td>
+                <td>${esc(inst.hostname)}</td>
+                <td>${esc(inst.public_ip)}</td>
+                <td>${esc(inst.domain)}</td>
+                <td>${esc(inst.os)}</td>
+                <td>${esc(inst.panel_version)}</td>
+                <td>${statusBadge}</td>
+                <td>${activated}</td>
+                <td class="${online ? 'online' : 'offline'}" title="${esc(inst.last_seen_at)}">${ping}</td>
+                <td>${deactBtn}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        instCache[lid] = html;
+        content.innerHTML = html;
+    } catch(e) {
+        content.innerHTML = `<span class="muted" style="padding:8px;display:block">Erro ao carregar instalações.</span>`;
+    }
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '—';
+    return d.innerHTML;
+}
+
+function timeSince(iso) {
+    if (!iso) return '—';
+    const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (sec < 60)   return sec + 's atrás';
+    if (sec < 3600) return Math.floor(sec/60) + 'min atrás';
+    if (sec < 86400)return Math.floor(sec/3600) + 'h atrás';
+    return Math.floor(sec/86400) + 'd atrás';
 }
 </script>
 

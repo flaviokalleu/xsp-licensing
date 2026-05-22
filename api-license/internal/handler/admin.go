@@ -147,6 +147,53 @@ func (a *Admin) AddBlacklist(c *fiber.Ctx) error {
 	return c.Status(201).JSON(fiber.Map{"status": "ok"})
 }
 
+func (a *Admin) GetKeyInstallations(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return fiber.NewError(400, "bad_id")
+	}
+	items, err := a.repo.ListInstallationsByLicense(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(500, "internal")
+	}
+	type instItem struct {
+		ID              string    `json:"id"`
+		Status          string    `json:"status"`
+		Hostname        string    `json:"hostname"`
+		Domain          string    `json:"domain"`
+		PublicIP        string    `json:"public_ip"`
+		OS              string    `json:"os"`
+		PanelVersion    string    `json:"panel_version"`
+		InstallerVersion string   `json:"installer_version"`
+		ActivatedAt     time.Time `json:"activated_at"`
+		LastSeenAt      time.Time `json:"last_seen_at"`
+		ActivationIP    string    `json:"activation_ip"`
+		LastIP          string    `json:"last_ip"`
+	}
+	out := make([]instItem, 0, len(items))
+	for _, in := range items {
+		out = append(out, instItem{
+			ID: in.ID.String(), Status: in.Status,
+			Hostname: in.Hostname, Domain: in.Domain, PublicIP: in.PublicIP,
+			OS: in.OS, PanelVersion: in.PanelVersion, InstallerVersion: in.InstallerVersion,
+			ActivatedAt: in.ActivatedAt, LastSeenAt: in.LastSeenAt,
+			ActivationIP: in.ActivationIP, LastIP: in.LastIP,
+		})
+	}
+	return c.JSON(fiber.Map{"items": out, "total": len(out)})
+}
+
+func (a *Admin) DeactivateInstallation(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return fiber.NewError(400, "bad_id")
+	}
+	if err := a.repo.DeactivateInstallation(c.Context(), id); err != nil {
+		return fiber.NewError(500, "internal")
+	}
+	return c.JSON(fiber.Map{"status": "deactivated"})
+}
+
 type releaseReq struct {
 	Version   string         `json:"version"`
 	MasterKey string         `json:"master_key"`
