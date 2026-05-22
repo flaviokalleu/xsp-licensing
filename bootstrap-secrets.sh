@@ -10,20 +10,27 @@ ENV_FILE="${1:-.env}"
 [[ -f "$ENV_FILE" ]] || cp .env.example "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
-# Função para inserir/atualizar uma chave no .env sem duplicar
+# Insere/atualiza uma chave no .env sem duplicar
 set_env() {
   local k="$1" v="$2"
-  if grep -q "^${k}=" "$ENV_FILE"; then
-    sed -i.bak "s|^${k}=.*|${k}=${v}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+  if grep -q "^${k}=" "$ENV_FILE" 2>/dev/null; then
+    # Usa python3 para substituir com segurança (sem problema com / ou & no sed)
+    python3 -c "
+import re, sys
+k, v = sys.argv[1], sys.argv[2]
+content = open('$ENV_FILE').read()
+content = re.sub(r'^' + re.escape(k) + r'=.*', k + '=' + v, content, flags=re.MULTILINE)
+open('$ENV_FILE', 'w').write(content)
+" "$k" "$v"
   else
-    echo "${k}=${v}" >> "$ENV_FILE"
+    printf '%s=%s\n' "$k" "$v" >> "$ENV_FILE"
   fi
 }
 
-# Só gera se ainda não existir (idempotente)
+# Retorna true se a chave não existir ou estiver vazia
 need() {
-  local k="$1"
-  local cur=$(grep "^${k}=" "$ENV_FILE" | cut -d= -f2-)
+  local cur
+  cur=$(grep "^${1}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
   [[ -z "$cur" ]]
 }
 
@@ -34,7 +41,7 @@ SECRETS=$(docker run --rm --pull=missing \
   -v "$(pwd)/api-license":/src:ro \
   -w /src \
   golang:1.22-alpine sh -c '
-    apk add --no-cache git >/dev/null
+    apk add --no-cache git >/dev/null 2>&1
     go mod tidy >/dev/null 2>&1
     go run ./cmd/admin-cli gen-secrets
 ' 2>/dev/null | grep -E '^[A-Z_]+=')
@@ -51,7 +58,7 @@ while IFS='=' read -r key val; do
   fi
 done <<< "$SECRETS"
 
-# DB_PASS, REG_PASS, ADM_PASS — segredos simples
+# ── Segredos simples: DB, registry ───────────────────────────────────────────
 for k in DB_PASS REG_PASS; do
   if need "$k"; then
     set_env "$k" "$(openssl rand -hex 16)"
@@ -59,25 +66,71 @@ for k in DB_PASS REG_PASS; do
   fi
 done
 
-if need ADM_PASS; then
-  PASS=$(openssl rand -hex 12)
-  # Salva o hash bcrypt no .env, mostra a senha em claro só agora
-  set_env ADM_PASS "$(openssl passwd -6 "$PASS")"
-  echo "  + ADM_PASS (bcrypt salvo)"
+# ── Senha do admin dashboard (plaintext no .env) ──────────────────────────────
+# Usa ADMIN_DASH_PASS em plaintext — o PHP admin verifica via hash_equals ou bcrypt
+if need ADMIN_DASH_PASS; then
+  ADMIN_DASH_PASS_VAL=$(openssl rand -hex 12)
+  set_env ADMIN_DASH_PASS "$ADMIN_DASH_PASS_VAL"
+  set_env ADMIN_DASH_USER "admin"
+  echo "  + ADMIN_DASH_PASS"
+  echo "  + ADMIN_DASH_USER"
   echo
-  echo "  ▶ SENHA DO ADMIN-DASHBOARD: $PASS"
+  echo "  ▶ USUÁRIO DO PAINEL ADMIN: admin"
+  echo "  ▶ SENHA DO PAINEL ADMIN:   $ADMIN_DASH_PASS_VAL"
   echo "    (anote agora — não será mostrada de novo)"
+  echo
 fi
 
-# Garante htpasswd do registry (lazy gen)
+# ── Chaves Ed25519 (necessário para assinar license tokens) ──────────────────
+if need ED25519_PRIVATE_KEY_B64; then
+  echo "  Gerando chaves Ed25519..."
+  ED25519_KEYS=$(python3 - <<'PYEOF'
+import subprocess, base64, sys
+
+r = subprocess.run(
+    ['openssl', 'genpkey', '-algorithm', 'ed25519', '-outform', 'DER'],
+    capture_output=True)
+if r.returncode != 0:
+    sys.exit("openssl genpkey failed: " + r.stderr.decode())
+priv_der = r.stdout            # 48-byte PKCS8
+
+r2 = subprocess.run(
+    ['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+    input=priv_der, capture_output=True)
+if r2.returncode != 0:
+    sys.exit("openssl pkey failed: " + r2.stderr.decode())
+pub_der = r2.stdout            # 44-byte SubjectPublicKeyInfo
+
+seed   = priv_der[16:48]       # 32-byte seed
+pub    = pub_der[12:44]        # 32-byte raw public key
+go_priv = seed + pub           # 64-byte Go ed25519.PrivateKey
+
+print(base64.b64encode(go_priv).decode())
+print(base64.b64encode(pub).decode())
+PYEOF
+)
+  ED25519_PRIV=$(echo "$ED25519_KEYS" | sed -n '1p')
+  ED25519_PUB=$(echo "$ED25519_KEYS"  | sed -n '2p')
+  [[ -n "$ED25519_PRIV" && -n "$ED25519_PUB" ]] \
+    || { echo "✗ Falha ao gerar chaves Ed25519" >&2; exit 1; }
+  set_env ED25519_PRIVATE_KEY_B64 "$ED25519_PRIV"
+  set_env ED25519_PUBLIC_KEY_B64  "$ED25519_PUB"
+  echo "  + ED25519_PRIVATE_KEY_B64"
+  echo "  + ED25519_PUBLIC_KEY_B64"
+fi
+
+# ── htpasswd do registry ─────────────────────────────────────────────────────
 if [[ ! -f api-license/auth/htpasswd ]]; then
   mkdir -p api-license/auth
-  REG_USER=$(grep ^REG_USER "$ENV_FILE" | cut -d= -f2)
-  REG_PASS=$(grep ^REG_PASS "$ENV_FILE" | cut -d= -f2)
+  REG_USER=$(grep "^REG_USER=" "$ENV_FILE" | cut -d= -f2-)
+  REG_PASS=$(grep "^REG_PASS=" "$ENV_FILE" | cut -d= -f2-)
+  [[ -n "$REG_USER" && -n "$REG_PASS" ]] \
+    || { echo "✗ REG_USER ou REG_PASS não encontrado no .env" >&2; exit 1; }
   docker run --rm httpd:2-alpine htpasswd -Bbn "$REG_USER" "$REG_PASS" \
     > api-license/auth/htpasswd
   chmod 640 api-license/auth/htpasswd
   echo "  + api-license/auth/htpasswd (registry)"
 fi
 
+echo
 echo "✓ Segredos prontos em $ENV_FILE"

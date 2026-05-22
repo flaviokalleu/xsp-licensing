@@ -39,6 +39,14 @@ echo
 [[ -f docker-compose.yml && -d api-license ]] \
   || die "Rode este script dentro do diretório 'licensing/'."
 
+# Carrega .env existente → permite re-execução e instalação não-interativa
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source <(grep -vE '^\s*#|^\s*$' .env 2>/dev/null) 2>/dev/null || true
+  set +a
+fi
+
 # ─── coleta de entradas ──────────────────────────────────────────────────────
 if [[ ! -f .env ]] || ! grep -q "^API_HOST=" .env 2>/dev/null; then
 
