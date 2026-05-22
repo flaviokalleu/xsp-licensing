@@ -65,7 +65,7 @@ apt-get update -qq >/dev/null
 apt-get install -y -qq curl openssl jq util-linux ca-certificates \
     >/dev/null 2>&1 || die "apt-get install falhou."
 
-[[ "$HMAC_PUBLIC_SECRET" == "__HMAC_PUBLIC_SECRET_64_HEX_CHARS__" ]] \
+[[ "${HMAC_PUBLIC_SECRET:0:2}" == "__" ]] \
   && die "Este instalador não foi configurado. Contate o fornecedor."
 
 # ─── pede KEY, domínio, e-mail ───────────────────────────────────────────────
