@@ -1,58 +1,44 @@
 ###############################################################################
-#  XSP Licensing — Caddy reverse proxy
-#  TLS automático via Let's Encrypt. Variáveis vêm do .env.
+#  XSP — Caddyfile modo IP (gerado por install-server.sh)
 ###############################################################################
-
 {
-    email {$ACME_EMAIL}
-    # Para testes locais sem DNS público, comente acima e descomente:
-    # local_certs
+    auto_https off
 }
 
-# ────────── API de licença ─────────────────────────────────────────────────
-{$API_HOST} {
+# Landing page
+:80 {
+    encode gzip
+    root * /srv
+    @install path /install.sh
+    header @install Content-Type "text/x-shellscript; charset=utf-8"
+    file_server
+    try_files {path} {path}.html /index.html
+}
+
+# API de licença
+:8080 {
     encode gzip zstd
     reverse_proxy api:8443 {
         health_uri /healthz
         health_interval 15s
     }
-    log {
-        output stdout
-        format console
-    }
 }
 
-# ────────── Admin dashboard ────────────────────────────────────────────────
-{$ADM_HOST} {
+# Admin dashboard
+:8081 {
     encode gzip zstd
     reverse_proxy admin:80
-    # Adicione IP allow-list aqui se quiser restringir o admin:
-    # @blocked not remote_ip 1.2.3.4
-    # respond @blocked 403
 }
 
-# ────────── Customer Portal (minha conta) ──────────────────────────────────
-{$PORTAL_HOST} {
+# Portal do cliente
+:8082 {
     encode gzip zstd
     reverse_proxy portal:80
 }
 
-# ────────── Docker registry privado ────────────────────────────────────────
-{$REG_HOST} {
+# Registry
+:5000 {
     reverse_proxy registry:5000 {
         header_up X-Forwarded-Proto {scheme}
     }
-}
-
-# ────────── Landing pública + install.sh ───────────────────────────────────
-{$PUBLIC_HOST} {
-    encode gzip
-    root * /srv
-
-    # install.sh com Content-Type correto para curl|bash
-    @install path /install.sh
-    header @install Content-Type "text/x-shellscript; charset=utf-8"
-
-    file_server
-    try_files {path} {path}.html /index.html
 }

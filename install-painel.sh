@@ -70,7 +70,7 @@ apt-get install -y -qq curl openssl jq util-linux ca-certificates \
 
 # ─── pede KEY, domínio, e-mail ───────────────────────────────────────────────
 # Garante leitura interativa mesmo quando rodando via `curl | bash`
-if [[ ! -t 0 ]]; then
+if [[ ! -t 0 && -z "${ARG_KEY:-}${ARG_DOMAIN:-}${ARG_EMAIL:-}" ]]; then
   exec </dev/tty 2>/dev/null || true
 fi
 
@@ -152,7 +152,7 @@ SIG=$(
   { printf '%s' "${METHOD}${PATH_REQ}"
     printf '%s' "$BODY"
     printf '%s' "${TS}${NONCE}"
-  } | openssl dgst -sha256 -mac HMAC -macopt "key:${HMAC_PUBLIC_SECRET}" -hex \
+  } | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${HMAC_PUBLIC_SECRET}" -hex \
     | awk '{print $NF}'
 )
 
@@ -207,6 +207,32 @@ if ! docker compose version >/dev/null 2>&1; then
   apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1 \
     || die "docker compose não pôde ser instalado."
 fi
+
+# ─── configura registry HTTP (insecure) ──────────────────────────────────────
+REGISTRY_HOST_ONLY=$(echo "$REGISTRY_HOST" | cut -d'/' -f1)
+step "Configurando registry ($REGISTRY_HOST_ONLY)..."
+mkdir -p /etc/docker
+DAEMON_JSON=/etc/docker/daemon.json
+NEEDS_RESTART=0
+if [[ -f "$DAEMON_JSON" ]]; then
+  if ! python3 -c "import json,sys; d=json.load(open('$DAEMON_JSON')); sys.exit(0 if '$REGISTRY_HOST_ONLY' in d.get('insecure-registries',[]) else 1)" 2>/dev/null; then
+    python3 -c "
+import json
+with open('$DAEMON_JSON') as f: d=json.load(f)
+d.setdefault('insecure-registries',[]).append('$REGISTRY_HOST_ONLY')
+with open('$DAEMON_JSON','w') as f: json.dump(d,f)
+"
+    NEEDS_RESTART=1
+  fi
+else
+  printf '{"insecure-registries": ["%s"]}\n' "$REGISTRY_HOST_ONLY" > "$DAEMON_JSON"
+  NEEDS_RESTART=1
+fi
+if [[ $NEEDS_RESTART -eq 1 ]]; then
+  systemctl restart docker 2>/dev/null || true
+  sleep 2
+fi
+ok "Registry configurado."
 
 # ─── login no registry ───────────────────────────────────────────────────────
 step "Autenticando no registry privado..."

@@ -136,7 +136,7 @@ if command -v ufw >/dev/null 2>&1; then
   ufw --force reset >/dev/null
   ufw default deny incoming >/dev/null
   ufw default allow outgoing >/dev/null
-  ufw allow OpenSSH >/dev/null
+  ufw allow 22/tcp >/dev/null
   ufw allow 80/tcp  >/dev/null
   ufw allow 443/tcp >/dev/null
   if [[ "$ACCESS_MODE" == "U" ]]; then
