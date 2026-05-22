@@ -38,8 +38,22 @@ function xsp_compute_hwid(): string {
         $mac = trim((string)file_get_contents($f));
         if ($mac && $mac !== '00:00:00:00:00:00') break;
     }
-    $diskUuid = @trim((string)shell_exec(
-        "blkid -s UUID -o value \$(findmnt -n -o SOURCE /) 2>/dev/null"));
+    // Resolve UUID do root sem shell_exec (que pode estar em disable_functions).
+    // Lê /proc/mounts para achar o device de / e depois resolve via /dev/disk/by-uuid/.
+    $diskUuid = '';
+    $rootDev  = '';
+    foreach (file('/proc/mounts', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+        $parts = explode(' ', $line, 3);
+        if (isset($parts[1]) && $parts[1] === '/') { $rootDev = realpath($parts[0]) ?: $parts[0]; break; }
+    }
+    if ($rootDev !== '') {
+        foreach (glob('/dev/disk/by-uuid/*') ?: [] as $link) {
+            if ((realpath($link) ?: readlink($link)) === $rootDev) {
+                $diskUuid = basename($link);
+                break;
+            }
+        }
+    }
     $boardUuid = @trim((string)file_get_contents('/sys/class/dmi/id/product_uuid'));
 
     $sep = "\x1f";
