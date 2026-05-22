@@ -230,41 +230,85 @@ fi
 case "$MODE" in
   U)
     step "Gerando Caddyfile (domínio único + paths)..."
-    cat > "$WORK/Caddyfile" <<'CADDY'
-{ email {$ACME_EMAIL} }
-{$PUBLIC_HOST} {
-  encode gzip zstd
-  handle_path /api/*   { reverse_proxy api:8443 { health_uri /healthz; health_interval 15s } }
-  handle_path /admin/* { reverse_proxy admin:80 }
-  handle_path /portal/*{ reverse_proxy portal:80 }
-  handle { root * /srv; @inst path /install.sh; header @inst Content-Type "text/x-shellscript; charset=utf-8"; file_server }
-  log { output stdout; format console }
-}
-{$PUBLIC_HOST}:5000 { reverse_proxy registry:5000 { header_up X-Forwarded-Proto {scheme} } }
-CADDY
-    cat > "$WORK/docker-compose.override.yml" <<'OVR'
-services:
-  caddy:
-    ports: ["5000:5000"]
-OVR
+    printf '%s\n' \
+      '{ email {$ACME_EMAIL} }' \
+      '{$PUBLIC_HOST} {' \
+      '  encode gzip zstd' \
+      '  handle_path /api/* {' \
+      '    reverse_proxy api:8443' \
+      '  }' \
+      '  handle_path /admin/* {' \
+      '    reverse_proxy admin:80' \
+      '  }' \
+      '  handle_path /portal/* {' \
+      '    reverse_proxy portal:80' \
+      '  }' \
+      '  handle {' \
+      '    root * /srv' \
+      '    @inst path /install.sh' \
+      '    header @inst Content-Type "text/x-shellscript; charset=utf-8"' \
+      '    file_server' \
+      '  }' \
+      '  log { output stdout; format console }' \
+      '}' \
+      '{$PUBLIC_HOST}:5000 {' \
+      '  reverse_proxy registry:5000' \
+      '}' > "$WORK/Caddyfile"
+    printf '%s\n' \
+      'services:' \
+      '  caddy:' \
+      '    ports: ["5000:5000"]' > "$WORK/docker-compose.override.yml"
     ;;
   I)
     step "Gerando Caddyfile (IP / HTTP)..."
-    cat > "$WORK/Caddyfile" <<'CADDY'
-{ auto_https off }
-:80   { root * /srv; @inst path /install.sh; header @inst Content-Type "text/x-shellscript; charset=utf-8"; file_server }
-:8080 { reverse_proxy api:8443 { health_uri /healthz; health_interval 15s } }
-:8081 { reverse_proxy admin:80 }
-:8082 { reverse_proxy portal:80 }
-:5000 { reverse_proxy registry:5000 { header_up X-Forwarded-Proto {scheme} } }
-CADDY
-    cat > "$WORK/docker-compose.override.yml" <<'OVR'
-services:
-  caddy:
-    ports: ["8080:8080","8081:8081","8082:8082","5000:5000"]
-OVR
+    printf '%s\n' \
+      '{' \
+      '    auto_https off' \
+      '}' \
+      ':80 {' \
+      '    root * /srv' \
+      '    @inst path /install.sh' \
+      '    header @inst Content-Type "text/x-shellscript; charset=utf-8"' \
+      '    file_server' \
+      '}' \
+      ':8080 {' \
+      '    reverse_proxy api:8443' \
+      '}' \
+      ':8081 {' \
+      '    reverse_proxy admin:80' \
+      '}' \
+      ':8082 {' \
+      '    reverse_proxy portal:80' \
+      '}' \
+      ':5000 {' \
+      '    reverse_proxy registry:5000' \
+      '}' > "$WORK/Caddyfile"
+    printf '%s\n' \
+      'services:' \
+      '  caddy:' \
+      '    ports: ["8080:8080","8081:8081","8082:8082","5000:5000"]' > "$WORK/docker-compose.override.yml"
     ;;
   S)
+    printf '%s\n' \
+      '{ email {$ACME_EMAIL} }' \
+      '{$API_HOST} {' \
+      '  reverse_proxy api:8443' \
+      '}' \
+      '{$ADM_HOST} {' \
+      '  reverse_proxy admin:80' \
+      '}' \
+      '{$PORTAL_HOST} {' \
+      '  reverse_proxy portal:80' \
+      '}' \
+      '{$REG_HOST} {' \
+      '  reverse_proxy registry:5000' \
+      '}' \
+      '{$PUBLIC_HOST} {' \
+      '  root * /srv' \
+      '  @inst path /install.sh' \
+      '  header @inst Content-Type "text/x-shellscript; charset=utf-8"' \
+      '  file_server' \
+      '}' > "$WORK/Caddyfile"
     rm -f "$WORK/docker-compose.override.yml"
     ;;
 esac
