@@ -175,13 +175,13 @@ func (s *Service) Heartbeat(ctx context.Context, in HeartbeatInput) (*HeartbeatO
 		return nil, ErrLicenseRevoked
 	}
 
-	// Vínculo permanente de IP: só o IP registrado na ativação pode fazer heartbeat
+	// Detecção de mudança de IP: loga como suspeito mas não bloqueia.
+	// Blacklist automático por IP causava falsos positivos quando o container
+	// envia heartbeat por caminho de rede diferente da ativação (proxy/Caddy).
 	if in.IP != "" && inst.ActivationIP != "" && inst.ActivationIP != in.IP {
 		s.repo.LogFraud(ctx, &inst.ID, &inst.LicenseID, "ip_mismatch",
 			map[string]any{"activation_ip": inst.ActivationIP, "request_ip": in.IP,
-				"hwid": in.HWID}, 5)
-		_ = s.repo.AddBlacklist(ctx, "hwid", in.HWID, "ip_binding_violation")
-		return nil, ErrBlacklisted
+				"hwid": in.HWID}, 2)
 	}
 
 	// Refresh license info
