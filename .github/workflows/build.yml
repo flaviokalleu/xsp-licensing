@@ -1,4 +1,4 @@
-name: Build & Publish Docker
+name: Build & Release
 
 on:
   push:
@@ -9,21 +9,19 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write
 
 jobs:
+  # ── 1. Imagem Docker do instalador (para quem quiser usar via docker run) ──
   docker:
-    name: Build e push imagem do instalador
+    name: Build imagem Docker
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Login no GitHub Container Registry
+      - name: Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -39,7 +37,6 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=,format=short
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build e push
         uses: docker/build-push-action@v5
@@ -50,61 +47,127 @@ jobs:
           provenance: false
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/flaviokalleu/xsp-licensing
-            org.opencontainers.image.description=XSP Licensing — instalador do servidor central
-            org.opencontainers.image.revision=${{ github.sha }}
 
+  # ── 2. Binário Go autocontido para o servidor ─────────────────────────────
+  binary:
+    name: Build binário install-server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Gerar bundle.zip
+        run: |
+          zip -r bundle.zip \
+            api-license \
+            admin-dashboard \
+            customer-portal \
+            landing \
+            builder \
+            painel-image \
+            xsp-loader \
+            docker-compose.yml \
+            Makefile \
+            .env.example \
+            install-painel.sh \
+            install-server.sh \
+            Caddyfile
+
+      - name: Compilar install-server (Linux amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w" -o install-server install-server.go
+          chmod +x install-server
+
+      - name: Upload artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-server
+          path: install-server
+          retention-days: 7
+
+  # ── 3. GitHub Release com todos os assets ────────────────────────────────
   release:
     name: Criar GitHub Release
     runs-on: ubuntu-latest
-    needs: docker
+    needs: [docker, binary]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     permissions:
       contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Download binário
+        uses: actions/download-artifact@v4
+        with:
+          name: install-server
+
+      - name: Tornar executável
+        run: chmod +x install-server
 
       - name: Gerar tag com data
         id: tag
         run: echo "tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Criar release com comando de instalação
+      - name: Criar release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "XSP Licensing ${{ steps.tag.outputs.tag }}"
+          files: |
+            install-server
+            setup.sh
+            install-painel.sh
           body: |
-            ## Instalação na VPS
+            ## Instalação
 
-            Execute este único comando como root na sua VPS:
+            ### 🖥️ Servidor Central (sua VPS)
 
+            **Opção A — Um comando (recomendado):**
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/flaviokalleu/xsp-licensing/master/setup.sh | sudo bash
+            ```
+
+            **Opção B — Binário autocontido (sem git/clone):**
+            ```bash
+            wget https://github.com/flaviokalleu/xsp-licensing/releases/latest/download/install-server
+            chmod +x install-server
+            sudo ./install-server
+            ```
+
+            **Opção C — Via Docker (sem instalar nada):**
             ```bash
             docker run --rm -it \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v /root:/root \
-              -w /root \
+              -v /root:/root -w /root \
               ghcr.io/flaviokalleu/xsp-licensing:latest
             ```
 
-            ### O que ele faz
-            - Pergunta o domínio/modo de acesso (subdomínios, domínio único ou só IP)
-            - Gera todos os segredos automaticamente (Ed25519, JWT, HMAC, senhas)
-            - Sobe a stack completa: API + Admin + Portal + DB + Redis + Registry + Caddy (TLS auto)
-            - Exibe a senha do admin ao final
+            ---
 
-            ### Comandos pós-instalação (em /root)
+            ### 👤 Cliente (VPS do cliente — instala o painel com KEY)
+
+            O cliente recebe este comando pelo Admin Dashboard após você criar a KEY:
             ```bash
+            curl -sSL http://SEU_IP/install.sh | sudo bash -s -- XSP-XXXX-XXXX-XXXX-XXXX
+            ```
+            > O instalador **para automaticamente** se a KEY for inválida, revogada ou expirada.
+
+            ---
+
+            ### ⚙️ Comandos pós-instalação (no servidor)
+            ```bash
+            cd /opt/xsp-licensing
             docker compose ps          # estado dos containers
             docker compose logs -f     # logs em tempo real
-            docker compose restart     # reinicia tudo
             make release               # publica nova versão do painel
             ```
 
             ---
-            Commit: ${{ github.sha }}
+            Commit: `${{ github.sha }}`
           draft: false
           prerelease: false
         env:
