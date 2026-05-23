@@ -104,6 +104,16 @@ function xsp_unseal_master_from_api(string $sealedB64, string $nonceHex, string 
     return bin2hex($pt);
 }
 
+function xsp_copy_hex_key(string $hex): string {
+    $bin = hex2bin($hex);
+    if ($bin === false) {
+        return $hex;
+    }
+    $copy = bin2hex($bin);
+    $bin = str_repeat("\0", strlen($bin));
+    return $copy;
+}
+
 function xsp_sign_request(string $method, string $path, string $body,
                           string $ts, string $nonce, string $secret): string {
     // A API faz hex_decode(HMAC_PUBLIC_SECRET) antes de usar como chave.
@@ -223,9 +233,19 @@ function xsp_verify_integrity(?string $masterKeyHex): void {
 
     // Verifica HMAC do manifest usando master key (impede manifest falso)
     if ($masterKeyHex !== null && $expectedHmac !== null) {
+        if (!is_string($masterKeyHex) || !preg_match('/^[a-f0-9]{64}$/i', $masterKeyHex)) {
+            xsp_report_tamper('manifest_master_key_invalid', []);
+            throw new RuntimeException('manifest master key invalid');
+        }
+        $masterKeyBin = hex2bin($masterKeyHex);
+        if ($masterKeyBin === false) {
+            xsp_report_tamper('manifest_master_key_invalid', []);
+            throw new RuntimeException('manifest master key invalid');
+        }
         $manifestBody = implode("\n", array_filter($lines,
             fn($l) => !str_starts_with($l, '# hmac-sha256:')));
-        $computedHmac = hash_hmac('sha256', $manifestBody . "\n", hex2bin($masterKeyHex));
+        $computedHmac = hash_hmac('sha256', $manifestBody . "\n", $masterKeyBin);
+        $masterKeyBin = str_repeat("\0", strlen($masterKeyBin));
         if (!hash_equals($expectedHmac, $computedHmac)) {
             xsp_report_tamper('manifest_hmac_invalid',
                 ['expected' => substr($expectedHmac, 0, 8) . '...']);
@@ -285,11 +305,15 @@ function xsp_license_bootstrap(): array {
     // 1) Tenta cache primeiro (rota rápida)
     $cached = xsp_load_cached($hwid);
     if ($cached && !empty($cached['master_key_hex'])) {
+        $masterForVerify = xsp_copy_hex_key((string)$cached['master_key_hex']);
         if (function_exists('xsp_unlock')) {
-            xsp_unlock($cached['master_key_hex']);
+            $unlockKey = xsp_copy_hex_key($masterForVerify);
+            xsp_unlock($unlockKey);
+            unset($unlockKey);
         }
         // Verifica integridade dos arquivos cifrados (usa master key do cache)
-        xsp_verify_integrity($cached['master_key_hex']);
+        xsp_verify_integrity($masterForVerify);
+        $cached['master_key_hex'] = $masterForVerify;
 
         // Se passou da janela de heartbeat, faz async em best-effort
         if (xsp_should_heartbeat()) {
@@ -340,14 +364,16 @@ function xsp_perform_heartbeat(string $hwid, string $instId): array {
         $resp['master_key_nonce'],
         $hwid
     );
+    $masterForCache = xsp_copy_hex_key($masterHex);
     if (function_exists('xsp_unlock')) {
-        xsp_unlock($masterHex);
+        $unlockKey = xsp_copy_hex_key($masterForCache);
+        xsp_unlock($unlockKey);
+        unset($unlockKey);
     } else {
         throw new RuntimeException('xsp_loader not loaded');
     }
-    $data = $resp + ['master_key_hex' => $masterHex];
+    $data = $resp;
+    $data['master_key_hex'] = xsp_copy_hex_key($masterForCache);
     xsp_save_cached($data, $hwid);
-    // limpa hex local
-    $masterHex = str_repeat("\0", strlen($masterHex));
     return $data;
 }

@@ -37,4 +37,9 @@ try {
 // A partir daqui, o painel original está disponível via xsp://
 // Roteia para o entrypoint real (index.php do painel atual).
 $panelRoot = '/var/www/html';
-require 'xsp://' . $panelRoot . '/' . ltrim($_SERVER['SCRIPT_NAME'] ?? '/index.php', '/');
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+if ($requestPath === '/' || basename($requestPath) === 'bootstrap.php' || basename($requestPath) === 'index_router.php') {
+    $requestPath = '/index.php';
+}
+require 'xsp://' . $panelRoot . '/' . ltrim($requestPath, '/');
+exit;

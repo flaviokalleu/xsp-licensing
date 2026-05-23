@@ -122,14 +122,13 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput, ip string) (*A
 		return nil, err
 	}
 
-	sealed, nonce, err := xcrypto.SealMasterKey(s.cfg.ReleaseMasterKey, in.HWID)
+	masterKey, manifest, err := s.releaseMaterial(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	manifest, _ := s.repo.GetReleaseManifest(ctx, s.cfg.ReleaseVersion)
-	if manifest == nil {
-		manifest = defaultManifest(s.cfg.ReleaseVersion, s.cfg.RegistryURL)
+	sealed, nonce, err := xcrypto.SealMasterKey(masterKey, in.HWID)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ActivateOutput{
@@ -218,7 +217,11 @@ func (s *Service) Heartbeat(ctx context.Context, in HeartbeatInput) (*HeartbeatO
 	if err != nil {
 		return nil, err
 	}
-	sealed, nonce, err := xcrypto.SealMasterKey(s.cfg.ReleaseMasterKey, in.HWID)
+	masterKey, _, err := s.releaseMaterial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sealed, nonce, err := xcrypto.SealMasterKey(masterKey, in.HWID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +233,26 @@ func (s *Service) Heartbeat(ctx context.Context, in HeartbeatInput) (*HeartbeatO
 		MasterKeyNonce:  nonce,
 		ExpiresAt:       lic.ExpiresAt,
 	}, nil
+}
+
+func (s *Service) releaseMaterial(ctx context.Context) (string, map[string]any, error) {
+	masterKey := s.cfg.ReleaseMasterKey
+	manifest := defaultManifest(s.cfg.ReleaseVersion, s.cfg.RegistryURL)
+
+	releaseMaster, releaseManifest, err := s.repo.GetRelease(ctx, s.cfg.ReleaseVersion)
+	if err == nil {
+		if releaseMaster != "" {
+			masterKey = releaseMaster
+		}
+		if releaseManifest != nil {
+			manifest = releaseManifest
+		}
+		return masterKey, manifest, nil
+	}
+	if errors.Is(err, repo.ErrNotFound) {
+		return masterKey, manifest, nil
+	}
+	return "", nil, err
 }
 
 func (s *Service) licenseHashFromInstallation(ctx context.Context, licID uuid.UUID) (string, error) {

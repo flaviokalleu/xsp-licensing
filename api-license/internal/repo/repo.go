@@ -30,9 +30,9 @@ func New(ctx context.Context, dsn string) (*Repo, error) {
 func (r *Repo) Close() { r.pool.Close() }
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrMaxInstances  = errors.New("max instances reached")
-	ErrBlacklisted   = errors.New("blacklisted")
+	ErrNotFound     = errors.New("not found")
+	ErrMaxInstances = errors.New("max instances reached")
+	ErrBlacklisted  = errors.New("blacklisted")
 )
 
 // ===== Licenses =====
@@ -321,6 +321,17 @@ func (r *Repo) GetReleaseManifest(ctx context.Context, version string) (map[stri
 		return nil, ErrNotFound
 	}
 	return manifest, err
+}
+
+func (r *Repo) GetRelease(ctx context.Context, version string) (string, map[string]any, error) {
+	var masterKeyHex string
+	var manifest map[string]any
+	err := r.pool.QueryRow(ctx,
+		`SELECT master_key_hex, manifest FROM releases WHERE version=$1`, version).Scan(&masterKeyHex, &manifest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, ErrNotFound
+	}
+	return masterKeyHex, manifest, err
 }
 
 func (r *Repo) PutRelease(ctx context.Context, version, masterKeyHex string, manifest map[string]any) error {
