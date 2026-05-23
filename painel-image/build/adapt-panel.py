@@ -114,6 +114,45 @@ LEAK_RE = re.compile(
     re.IGNORECASE,
 )
 
+PANEL_DISPLAY_VERSION = 'Alfa v10'
+
+def normalize_frontend_versions(text: str) -> str:
+    text = re.sub(
+        r"""Versão atual\s*:\s*[^<]+""",
+        f"Versão atual : {PANEL_DISPLAY_VERSION} ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"""(\$currentVersion\s*=\s*)['"][^'"]+['"]\s*;""",
+        rf"\1'{PANEL_DISPLAY_VERSION}';",
+        text,
+    )
+    text = re.sub(
+        r"""(\$latestVersion\s*=\s*)['"][^'"]+['"]\s*;""",
+        rf"\1'{PANEL_DISPLAY_VERSION}';",
+        text,
+    )
+    text = re.sub(
+        r"""Atualização\s+[0-9]+(?:\.[0-9]+)+""",
+        f"Atualização {PANEL_DISPLAY_VERSION}",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"""Painel Office\s+[0-9]+(?:\.[0-9]+)+""",
+        f"Painel Office {PANEL_DISPLAY_VERSION}",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"""PLAYER API\s+v[0-9]+(?:\.[0-9]+)+""",
+        f"PLAYER API {PANEL_DISPLAY_VERSION}",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
+
 # ─── 3) aplica nas .php ─────────────────────────────────────────────────────
 print("→ Substituindo credenciais hardcoded por getenv()...")
 modified = 0
@@ -160,6 +199,21 @@ if leaks_remaining:
     if len(leaks_remaining) > 10:
         print(f"    ... e mais {len(leaks_remaining)-10}.")
     print("  → revise manualmente OU adicione padrões em PATTERNS.")
+
+# ─── 3.1) normaliza versões exibidas no frontend ────────────────────────────
+print(f"→ Normalizando versões visíveis para {PANEL_DISPLAY_VERSION}...")
+version_modified = 0
+for f in list(DEST.rglob('*.php')) + list(DEST.rglob('*.html')):
+    try:
+        text = f.read_text(encoding='utf-8', errors='replace')
+    except Exception as e:
+        print(f"  ⚠ falha ao ler {f}: {e}")
+        continue
+    normalized = normalize_frontend_versions(text)
+    if normalized != text:
+        f.write_text(normalized, encoding='utf-8')
+        version_modified += 1
+print(f"✓ Versão frontend atualizada em {version_modified} arquivos.")
 
 # ─── 4) cria conector central (opcional, recomenda-se incluir) ──────────────
 print("→ Escrevendo _xsp_db.php (conector central)...")
