@@ -410,6 +410,7 @@ func personalizeInstallSh(env envMap) error {
 	content = strings.ReplaceAll(content, "__HMAC_PUBLIC_SECRET_64_HEX_CHARS__", hmac)
 	content = strings.ReplaceAll(content, "https://license.seudominio.com", proto+"://"+apiH)
 	content = strings.ReplaceAll(content, "registry.seudominio.com", regH)
+	content = strings.ReplaceAll(content, "__INSTALL_URL__", proto+"://"+env.get("PUBLIC_HOST")+"/install.sh")
 	return os.WriteFile("www-public/install.sh", []byte(content), 0755)
 }
 
@@ -606,7 +607,9 @@ func main() {
 		if mode == "I" {
 			proto = "http"
 		}
+		env.set("API_SCHEME", proto)
 		env.set("INSTALL_URL", proto+"://"+env.get("PUBLIC_HOST")+"/install.sh")
+		collected := env
 
 		// copia .env.example como base se .env não existir
 		if _, err := os.Stat(".env"); err != nil {
@@ -616,10 +619,10 @@ func main() {
 				// reaplica as entradas coletadas
 				for k, v := range map[string]string{
 					"ACCESS_MODE": mode, "ADM_USER": admUser, "REG_USER": "license", "PANEL_VERSION": "10.0.3",
-					"PUBLIC_HOST": env.get("PUBLIC_HOST"), "API_HOST": env.get("API_HOST"),
-					"ADM_HOST": env.get("ADM_HOST"), "PORTAL_HOST": env.get("PORTAL_HOST"),
-					"REG_HOST": env.get("REG_HOST"), "ACME_EMAIL": env.get("ACME_EMAIL"),
-					"INSTALL_URL": env.get("INSTALL_URL"),
+					"PUBLIC_HOST": collected.get("PUBLIC_HOST"), "API_HOST": collected.get("API_HOST"),
+					"ADM_HOST": collected.get("ADM_HOST"), "PORTAL_HOST": collected.get("PORTAL_HOST"),
+					"REG_HOST": collected.get("REG_HOST"), "ACME_EMAIL": collected.get("ACME_EMAIL"),
+					"API_SCHEME": collected.get("API_SCHEME"), "INSTALL_URL": collected.get("INSTALL_URL"),
 				} {
 					env.set(k, v)
 				}
@@ -629,6 +632,16 @@ func main() {
 		ok(".env inicializado (modo: " + mode + ").")
 	} else {
 		ok("Configuração já encontrada no .env (modo: " + mode + "). Pulando coleta.")
+	}
+	if !env.has("API_SCHEME") {
+		proto := "https"
+		if mode == "I" {
+			proto = "http"
+		}
+		env.set("API_SCHEME", proto)
+	}
+	if !env.has("INSTALL_URL") && env.get("PUBLIC_HOST") != "" {
+		env.set("INSTALL_URL", env.get("API_SCHEME")+"://"+env.get("PUBLIC_HOST")+"/install.sh")
 	}
 
 	// ── Docker ──────────────────────────────────────────────────────────────

@@ -106,12 +106,13 @@ function xsp_unseal_master_from_api(string $sealedB64, string $nonceHex, string 
 
 function xsp_sign_request(string $method, string $path, string $body,
                           string $ts, string $nonce, string $secret): string {
-    // A API armazena o secret como hex e decodifica para binário antes de usar.
-    // Deve-se fazer o mesmo aqui para que as assinaturas batam.
-    $keyBin = ctype_xdigit($secret) && strlen($secret) % 2 === 0
-        ? hex2bin($secret)
-        : $secret;
-    return hash_hmac('sha256', $method . $path . $body . $ts . $nonce, $keyBin);
+    // A API faz hex_decode(HMAC_PUBLIC_SECRET) antes de usar como chave.
+    // Replica o mesmo aqui: trim + hex2bin quando for string hex válida.
+    $s = trim($secret);
+    $key = (strlen($s) >= 2 && strlen($s) % 2 === 0 && ctype_xdigit($s))
+        ? (hex2bin($s) ?: $s)
+        : $s;
+    return hash_hmac('sha256', $method . $path . $body . $ts . $nonce, $key);
 }
 
 function xsp_call_api(string $method, string $path, array $payload,
@@ -262,7 +263,7 @@ function xsp_report_tamper(string $kind, array $payload): void {
     try {
         $instId = xsp_env('XSP_INSTALLATION_ID');
         if ($instId === '') return;
-        xsp_call_api('POST', '/v1/fraud', [
+        xsp_call_api('POST', '/v1/fraud/report', [
             'kind'     => $kind,
             'payload'  => $payload,
             'severity' => 5,

@@ -18,10 +18,13 @@ API_BASE="https://license.seudominio.com"
 HMAC_PUBLIC_SECRET="__HMAC_PUBLIC_SECRET_64_HEX_CHARS__"
 REGISTRY_HOST="registry.seudominio.com"
 REGISTRY_USER="license"
+INSTALL_URL="__INSTALL_URL__"
 
 PANEL_VERSION="10.0.3"
 INSTALL_PATH="/opt/xsp"
 LOGFILE="/var/log/xsp-install.log"
+
+[[ "$INSTALL_URL" == "__INSTALL""_URL__" ]] && INSTALL_URL="${API_BASE%/api*}/install.sh"
 
 # ─── args ────────────────────────────────────────────────────────────────────
 ARG_KEY="${1:-}"
@@ -187,7 +190,11 @@ do_update() {
   # Heartbeat para validar licença antes de atualizar
   local ts nonce body sig http_code
   ts=$(date +%s); nonce=$(openssl rand -hex 16 2>/dev/null || echo "00000000")
-  body="{\"installation_id\":\"${XSP_INSTALLATION_ID:-}\",\"panel_version\":\"${XSP_VERSION:-}\"}"
+  body=$(jq -cn \
+    --arg installation_id "${XSP_INSTALLATION_ID:-}" \
+    --arg hwid "${XSP_HWID:-}" \
+    --arg panel_version "${XSP_VERSION:-}" \
+    '{installation_id: $installation_id, hwid: $hwid, panel_version: $panel_version}')
   sig=$(sign_hmac "POST" "/v1/heartbeat" "$body" "$ts" "$nonce")
   http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
     -X POST "${XSP_API_BASE:-}/v1/heartbeat" \
@@ -722,10 +729,8 @@ echo
 echo "  ${YEL}Comandos úteis:${NC}"
 echo "    Logs:       docker compose -f $INSTALL_PATH/docker-compose.yml logs -f"
 echo "    Reiniciar:  docker compose -f $INSTALL_PATH/docker-compose.yml restart"
-echo "    Status:     sudo bash $INSTALL_PATH/uninstall.sh --status 2>/dev/null || \\"
-echo "                  curl -sSL ${API_BASE%/api*}/install.sh | sudo bash -s -- --status"
-echo "    Atualizar:  sudo bash $INSTALL_PATH/uninstall.sh --update 2>/dev/null || \\"
-echo "                  curl -sSL ${API_BASE%/api*}/install.sh | sudo bash -s -- --update"
+echo "    Status:     curl -sSL ${INSTALL_URL} | sudo bash -s -- --status"
+echo "    Atualizar:  curl -sSL ${INSTALL_URL} | sudo bash -s -- --update"
 echo "    Desinstalar: sudo bash $INSTALL_PATH/uninstall.sh"
 echo
 echo "  ${YEL}Log desta instalação:${NC} $LOGFILE"

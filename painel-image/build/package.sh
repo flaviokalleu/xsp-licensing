@@ -58,7 +58,7 @@ MANIFEST_FILE="$WORK/enc/.manifest"
   done
 } > "$MANIFEST_FILE.raw"
 # HMAC do manifest usando MASTER_KEY (evita que atacante regenere o manifest)
-MANIFEST_HMAC=$(openssl dgst -sha256 -mac HMAC -macopt "key:$MASTER_KEY" \
+MANIFEST_HMAC=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$MASTER_KEY" \
   -hex "$MANIFEST_FILE.raw" | awk '{print $NF}')
 cat "$MANIFEST_FILE.raw" > "$MANIFEST_FILE"
 echo "# hmac-sha256: $MANIFEST_HMAC" >> "$MANIFEST_FILE"
@@ -108,7 +108,20 @@ docker buildx build \
 
 # 9) Captura SHA256 da imagem (digest no registry)
 DIGEST=$(docker buildx imagetools inspect "$REGISTRY:$VERSION" 2>/dev/null \
-         | awk '/Digest:/{print $2; exit}')
+         | awk '/Digest:/{print $2; exit}' || true)
+if [[ -z "$DIGEST" && "$REGISTRY" == */* ]]; then
+  REG_HOST_ONLY="${REGISTRY%%/*}"
+  REG_REPO="${REGISTRY#*/}"
+  AUTH_ARGS=()
+  if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+    AUTH_ARGS=(-u "${REGISTRY_USER}:${REGISTRY_PASS}")
+  fi
+  DIGEST=$(curl -fsSI "${AUTH_ARGS[@]}" \
+      -H "Accept: application/vnd.oci.image.index.v1+json" \
+      "http://${REG_HOST_ONLY}/v2/${REG_REPO}/manifests/${VERSION}" \
+      | awk -F': ' 'tolower($1)=="docker-content-digest"{gsub(/\r/,"",$2); print $2; exit}' \
+      || true)
+fi
 
 # 10) Monta manifest e registra na API
 MANIFEST=$(cat <<JSON

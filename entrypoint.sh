@@ -61,6 +61,7 @@ ACME_EMAIL="${ACME_EMAIL:-}"
 ADM_USER="${ADM_USER:-admin}"
 REG_USER="${REG_USER:-license}"
 PANEL_VERSION="${PANEL_VERSION:-10.0.3}"
+API_SCHEME="${API_SCHEME:-}"
 INSTALL_URL="${INSTALL_URL:-}"
 
 # ── Coleta interativa (só se ainda não configurado) ───────────────────────────
@@ -101,6 +102,7 @@ if [[ -z "$MODE" ]]; then
       PORTAL_HOST="$PUBLIC_HOST:8082"
       REG_HOST="$PUBLIC_HOST:5000"
       ACME_EMAIL="noreply@localhost"
+      API_SCHEME="http"
       INSTALL_URL="http://$PUBLIC_HOST/install.sh"
       ;;
     U)
@@ -112,6 +114,7 @@ if [[ -z "$MODE" ]]; then
       ADM_HOST="$PUBLIC_HOST"
       PORTAL_HOST="$PUBLIC_HOST"
       REG_HOST="$PUBLIC_HOST:5000"
+      API_SCHEME="https"
       INSTALL_URL="https://$PUBLIC_HOST/install.sh"
       ;;
     S)
@@ -124,6 +127,7 @@ if [[ -z "$MODE" ]]; then
       for v in "$API_HOST" "$ADM_HOST" "$PORTAL_HOST" "$REG_HOST" "$PUBLIC_HOST" "$ACME_EMAIL"; do
         [[ -n "$v" ]] || die "Todos os campos são obrigatórios."
       done
+      API_SCHEME="https"
       INSTALL_URL="https://$PUBLIC_HOST/install.sh"
       ;;
   esac
@@ -136,6 +140,14 @@ if [[ -z "$MODE" ]]; then
   ok ".env configurado (modo: $MODE)."
 else
   ok "Configuração já encontrada no .env (modo: $MODE). Pulando coleta."
+fi
+
+if [[ -z "$API_SCHEME" ]]; then
+  API_SCHEME="https"
+  [[ "$MODE" == "I" ]] && API_SCHEME="http"
+fi
+if [[ -z "$INSTALL_URL" && -n "$PUBLIC_HOST" ]]; then
+  INSTALL_URL="${API_SCHEME}://${PUBLIC_HOST}/install.sh"
 fi
 
 # ── Gera segredos (idempotente) ───────────────────────────────────────────────
@@ -194,6 +206,7 @@ ACME_EMAIL=${ACME_EMAIL}
 ADM_USER=${ADM_USER}
 REG_USER=${REG_USER}
 PANEL_VERSION=${PANEL_VERSION:-10.0.3}
+API_SCHEME=${API_SCHEME}
 INSTALL_URL=${INSTALL_URL}
 
 HMAC_PUBLIC_SECRET=${HMAC_PUBLIC_SECRET}
@@ -319,11 +332,11 @@ step "Personalizando install.sh..."
 mkdir -p "$WORK/www-public"
 [[ -f "$APP/landing/index.html" ]] && cp "$APP/landing/index.html" "$WORK/www-public/"
 
-PROTO="https"; [[ "$MODE" == "I" ]] && PROTO="http"
 sed \
   -e "s|__HMAC_PUBLIC_SECRET_64_HEX_CHARS__|${HMAC_PUBLIC_SECRET}|g" \
-  -e "s|https://license.seudominio.com|${PROTO}://${API_HOST}|g" \
+  -e "s|https://license.seudominio.com|${API_SCHEME}://${API_HOST}|g" \
   -e "s|registry.seudominio.com|${REG_HOST}|g" \
+  -e "s|__INSTALL_URL__|${INSTALL_URL}|g" \
   "$WORK/install-painel.sh" > "$WORK/www-public/install.sh"
 chmod 755 "$WORK/www-public/install.sh"
 ok "www-public/install.sh pronto."
@@ -340,7 +353,7 @@ with open('$DAEMON_JSON') as f: d=json.load(f)
 d.setdefault('insecure-registries',[]).append('$REGISTRY_HOST_ONLY')
 with open('$DAEMON_JSON','w') as f: json.dump(d,f)
 "
-    docker kill -s HUP \$(docker ps -q) 2>/dev/null || true
+    docker kill -s HUP $(docker ps -q) 2>/dev/null || true
   fi
 else
   printf '{\"insecure-registries\": [\"%s\"]}\n' "$REGISTRY_HOST_ONLY" > "$DAEMON_JSON"

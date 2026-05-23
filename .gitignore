@@ -11,6 +11,27 @@ bundle.zip
 install-server
 build-cache/
 www-public/
+dist/*.zip
+docker-compose.override.yml
+xsp-loader/.libs/
+xsp-loader/Makefile
+xsp-loader/Makefile.fragments
+xsp-loader/Makefile.objects
+xsp-loader/autom4te.cache/
+xsp-loader/build/
+xsp-loader/config.h
+xsp-loader/config.h.in
+xsp-loader/config.log
+xsp-loader/config.nice
+xsp-loader/config.status
+xsp-loader/configure
+xsp-loader/configure.ac
+xsp-loader/libtool
+xsp-loader/modules/
+xsp-loader/run-tests.php
+xsp-loader/xsp_loader.dep
+xsp-loader/xsp_loader.la
+xsp-loader/xsp_loader.lo
 
 # Dados runtime (gerados pelo stack)
 pgdata/

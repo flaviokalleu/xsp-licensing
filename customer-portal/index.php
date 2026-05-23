@@ -29,6 +29,14 @@ function api(string $path, array $body): array {
     return ['code' => $c, 'body' => json_decode((string)$r, true) ?: ['raw' => $r]];
 }
 
+function public_scheme(): string {
+    $https = $_SERVER['HTTPS'] ?? '';
+    $forwarded = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    if ($https !== '' && $https !== 'off') return 'https';
+    if ($forwarded === 'https' || $forwarded === 'http') return $forwarded;
+    return 'http';
+}
+
 // Pega KEY de POST (login) ou GET (link com ?key=...)
 $key = strtoupper(trim((string)($_POST['key'] ?? $_GET['key'] ?? $_SESSION['key'] ?? '')));
 $key = preg_replace('/[^A-Z0-9-]/', '', $key);
@@ -235,7 +243,7 @@ h2 { font-size:18px; margin-bottom:12px; }
   <div style="background:#050810; border:1px solid var(--border);
               border-radius:8px; padding:12px; font-family:monospace;
               font-size:13px; user-select:all; word-break:break-all;">
-    curl -sSL https://<?= htmlspecialchars($_SERVER['HTTP_HOST']) ?>/install.sh | sudo bash -s -- <?= htmlspecialchars($key) ?>
+    curl -sSL <?= htmlspecialchars(public_scheme() . '://' . $_SERVER['HTTP_HOST']) ?>/install.sh | sudo bash -s -- <?= htmlspecialchars($key) ?>
   </div>
 </div>
 

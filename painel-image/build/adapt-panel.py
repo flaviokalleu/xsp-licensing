@@ -27,11 +27,14 @@ DEST = pathlib.Path(sys.argv[2]).resolve()
 # ─── arquivos / padrões perigosos a NÃO incluir no destino ──────────────────
 EXCLUDE_FILES = {
     'TUTORIAL.txt', 'README.md',
-    'error_log', 'debug_log.txt',
+    '.env', '.env.local', '.env.backup',
+    'error_log', 'debug_log.txt', 'webhook_log.txt',
+    'teste_pix.php', 'teste_update.php', 'check_path.php',
+    'debug_categorias.php', 'teste_db.php',
 }
-EXCLUDE_DIRS = {'.git', 'node_modules', 'backups'}
+EXCLUDE_DIRS = {'.git', 'node_modules', 'backups', '__MACOSX', 'tests', 'samples'}
 EXCLUDE_PREFIXES = ('error_log-', '.swp', 'php_error', '.htaccess.bak')
-EXCLUDE_SUFFIXES = ('.bak', '.swp', '.swo', '.log', '.gz')
+EXCLUDE_SUFFIXES = ('.bak', '.swp', '.swo', '.log', '.gz', '.zip')
 
 # ─── 1) cópia limpa ─────────────────────────────────────────────────────────
 print(f"→ Copiando árvore para {DEST}/ ...")
@@ -93,10 +96,23 @@ PATTERNS = [
         r"\1\2getenv('DB_USER') ?: 'xsp';"),
     (re.compile(r"""(\s)(\$pass\s*=\s*)['"][^'"]+['"]\s*;"""),
         r"\1\2getenv('DB_PASS') ?: '';"),
+
+    # normaliza fallbacks legados que já estavam em getenv()
+    (re.compile(r"""getenv\('DB_HOST'\)\s*\?:\s*['"][^'"]+['"]"""),
+        r"getenv('DB_HOST') ?: 'localhost'"),
+    (re.compile(r"""getenv\('DB_NAME'\)\s*\?:\s*['"][^'"]+['"]"""),
+        r"getenv('DB_NAME') ?: 'xsp_panel'"),
+    (re.compile(r"""getenv\('DB_USER'\)\s*\?:\s*['"][^'"]+['"]"""),
+        r"getenv('DB_USER') ?: 'xsp'"),
+    (re.compile(r"""getenv\('DB_PASS'\)\s*\?:\s*['"][^'"]*['"]"""),
+        r"getenv('DB_PASS') ?: ''"),
 ]
 
 # Padrões "leaks de credenciais" — emite warning se ainda existirem após patches
-LEAK_RE = re.compile(r"""A82838188Agno|u874781703_painelags|Jean#909110|u535247987_tvbox""")
+LEAK_RE = re.compile(
+    r"""A82838188Agno|u874781703_painelags|Jean#909110|u535247987_tvbox|movei5087_painel|Meliodas2015""",
+    re.IGNORECASE,
+)
 
 # ─── 3) aplica nas .php ─────────────────────────────────────────────────────
 print("→ Substituindo credenciais hardcoded por getenv()...")
@@ -114,6 +130,22 @@ for php in DEST.rglob('*.php'):
     original = text
     for pat, repl in PATTERNS:
         text = pat.sub(repl, text)
+    text = re.sub(
+        r"""ini_set\(\s*['"]display_errors['"]\s*,\s*1\s*\)\s*;""",
+        "ini_set('display_errors', 0);",
+        text,
+    )
+    text = re.sub(
+        r"""ini_set\(\s*['"]display_startup_errors['"]\s*,\s*1\s*\)\s*;""",
+        "ini_set('display_startup_errors', 0);",
+        text,
+    )
+    text = re.sub(r"""error_reporting\(\s*E_ALL\s*\)\s*;""", "error_reporting(0);", text)
+    text = re.sub(
+        r"""die\(\s*['"]Erro na conexão com o banco de dados:\s*['"]\s*\.\s*\$e->getMessage\(\)\s*\)\s*;""",
+        "error_log('Erro na conexão com o banco de dados: ' . $e->getMessage()); die('Erro na conexão com o banco de dados.');",
+        text,
+    )
     if text != original:
         php.write_text(text, encoding='utf-8')
         modified += 1

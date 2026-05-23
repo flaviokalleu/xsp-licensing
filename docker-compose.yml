@@ -165,7 +165,7 @@ services:
       context: ./builder
       dockerfile: Dockerfile
     volumes:
-      - ../script:/panel-src:ro            # painel original
+      - ${PANEL_SRC_HOST:-../script}:/panel-src:ro  # painel original
       - ./painel-image:/painel-image:ro    # stubs + scripts
       - ./xsp-loader:/xsp-loader           # extensão C
       - /var/run/docker.sock:/var/run/docker.sock  # docker-out-of-docker
@@ -174,7 +174,7 @@ services:
       PANEL_SRC: /panel-src
       VERSION: ${PANEL_VERSION:-10.0.3}
       REGISTRY: ${REG_HOST}/xsp/panel
-      API_BASE: https://${API_HOST}
+      API_BASE: ${API_SCHEME:-https}://${API_HOST}
       INTERNAL_TOKEN: ${ADMIN_TOKEN}
       REGISTRY_USER: ${REG_USER}
       REGISTRY_PASS: ${REG_PASS}

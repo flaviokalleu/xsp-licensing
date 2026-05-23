@@ -312,6 +312,7 @@ if [[ -f install-painel.sh ]]; then
   HMAC=$(grep ^HMAC_PUBLIC_SECRET .env | cut -d= -f2)
   _API_HOST=$(grep ^API_HOST .env | cut -d= -f2)
   _REG_HOST=$(grep ^REG_HOST .env | cut -d= -f2)
+  _PUBLIC_HOST=$(grep ^PUBLIC_HOST .env | cut -d= -f2)
 
   # Protocolo e URL base da API variam por modo
   if [[ "$ACCESS_MODE" == "I" ]]; then
@@ -319,11 +320,17 @@ if [[ -f install-painel.sh ]]; then
   else
     _PROTO="https"
   fi
+  if grep -q "^API_SCHEME=" .env; then
+    sed -i "s|^API_SCHEME=.*|API_SCHEME=${_PROTO}|" .env
+  else
+    echo "API_SCHEME=${_PROTO}" >> .env
+  fi
 
   sed \
     -e "s|__HMAC_PUBLIC_SECRET_64_HEX_CHARS__|${HMAC}|" \
     -e "s|https://license.seudominio.com|${_PROTO}://${_API_HOST}|g" \
     -e "s|registry.seudominio.com|${_REG_HOST}|g" \
+    -e "s|__INSTALL_URL__|${_PROTO}://${_PUBLIC_HOST}/install.sh|g" \
     install-painel.sh > www-public/install.sh
   chmod 755 www-public/install.sh
   ok "install.sh personalizado em www-public/"
