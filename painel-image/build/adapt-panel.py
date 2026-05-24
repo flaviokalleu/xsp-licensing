@@ -23,6 +23,7 @@ if len(sys.argv) != 3:
 
 SRC  = pathlib.Path(sys.argv[1]).resolve()
 DEST = pathlib.Path(sys.argv[2]).resolve()
+BRANDING_DIR = pathlib.Path(__file__).resolve().parents[1] / 'branding'
 
 # ─── arquivos / padrões perigosos a NÃO incluir no destino ──────────────────
 EXCLUDE_FILES = {
@@ -115,6 +116,7 @@ LEAK_RE = re.compile(
 )
 
 PANEL_DISPLAY_VERSION = 'Alfa v10'
+PANEL_BRAND_NAME = 'PB&Ctv'
 
 INCLUDE_RE = re.compile(
     r"""\b(require|require_once|include|include_once)(\s*\(?\s*)(['"])([^'"]+\.php)(\3)(\s*\)?)""",
@@ -156,6 +158,15 @@ def rewrite_relative_includes(current_file: pathlib.Path, text: str) -> str:
     return INCLUDE_RE.sub(repl, text)
 
 def normalize_frontend_versions(text: str) -> str:
+    text = re.sub(r"""AGS\s+PLAY""", PANEL_BRAND_NAME, text, flags=re.IGNORECASE)
+    text = re.sub(r"""Ags\s+Play""", PANEL_BRAND_NAME, text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"""BEM[-\s]+VINDOS?\s+AO\s+PAINEL\s+PB&Ctv!?""",
+        f"BEM-VINDOS AO PAINEL {PANEL_BRAND_NAME}!",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = text.replace('O Melhor Conteúdo', 'O melhor conteúdo')
     text = re.sub(
         r"""Versão atual\s*:\s*[^<]+""",
         f"Versão atual : {PANEL_DISPLAY_VERSION} ",
@@ -243,7 +254,10 @@ if leaks_remaining:
 # ─── 3.1) normaliza versões exibidas no frontend ────────────────────────────
 print(f"→ Normalizando versões visíveis para {PANEL_DISPLAY_VERSION}...")
 version_modified = 0
-for f in list(DEST.rglob('*.php')) + list(DEST.rglob('*.html')):
+text_files = []
+for suffix in ('*.php', '*.html', '*.json', '*.txt', '*.css', '*.js'):
+    text_files.extend(DEST.rglob(suffix))
+for f in text_files:
     try:
         text = f.read_text(encoding='utf-8', errors='replace')
     except Exception as e:
@@ -254,6 +268,29 @@ for f in list(DEST.rglob('*.php')) + list(DEST.rglob('*.html')):
         f.write_text(normalized, encoding='utf-8')
         version_modified += 1
 print(f"✓ Versão frontend atualizada em {version_modified} arquivos.")
+
+# ─── 3.2) substitui logos da marca ─────────────────────────────────────────
+brand_logo = BRANDING_DIR / 'pbctv-logo.png'
+brand_banner = BRANDING_DIR / 'pbctv-banner.png'
+if brand_logo.is_file():
+    print("→ Aplicando logos PB&Ctv...")
+    img_dir = DEST / 'img'
+    img_dir.mkdir(parents=True, exist_ok=True)
+    for name in (
+        'logo.png',
+        'logo_tranparente.png',
+        'logo_tranparente2.png',
+        'logo_1376x509.png',
+        'logo1_1376x509.png',
+        'logo2_1376x509.png',
+        'icon.png',
+    ):
+        shutil.copyfile(brand_logo, img_dir / name)
+    if brand_banner.is_file():
+        shutil.copyfile(brand_banner, img_dir / 'pbctv-banner.png')
+    print("✓ Logos PB&Ctv aplicadas.")
+else:
+    print("⚠ Logos PB&Ctv não encontradas; mantendo imagens originais.")
 
 # ─── 4) cria conector central (opcional, recomenda-se incluir) ──────────────
 print("→ Escrevendo _xsp_db.php (conector central)...")
