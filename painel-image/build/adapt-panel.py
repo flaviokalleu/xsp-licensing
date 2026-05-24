@@ -122,6 +122,10 @@ INCLUDE_RE = re.compile(
     r"""\b(require|require_once|include|include_once)(\s*\(?\s*)(['"])([^'"]+\.php)(\3)(\s*\)?)""",
     re.IGNORECASE,
 )
+DOCROOT_INCLUDE_RE = re.compile(
+    r"""\b(require|require_once|include|include_once)(\s*\(?\s*)\$_SERVER\s*\[\s*['"]DOCUMENT_ROOT['"]\s*\]\s*\.\s*(['"])(/[^'"]+\.php)(\3)(\s*\)?)""",
+    re.IGNORECASE,
+)
 
 def normalize_relative_include(current_file: pathlib.Path, include_path: str) -> str:
     if re.match(r"""^[a-z][a-z0-9+.-]*://""", include_path, re.IGNORECASE):
@@ -129,7 +133,11 @@ def normalize_relative_include(current_file: pathlib.Path, include_path: str) ->
 
     # Paths that are relative to the panel source must also be loaded through
     # the encrypted stream wrapper after the build deletes clear PHP files.
-    if include_path.startswith('/'):
+    if include_path.startswith('/var/www/html/'):
+        rel = pathlib.PurePosixPath(include_path.removeprefix('/var/www/html/'))
+    elif include_path == '/var/www/html':
+        return include_path
+    elif include_path.startswith('/'):
         rel = pathlib.PurePosixPath(include_path.lstrip('/'))
     else:
         current_rel_dir = current_file.relative_to(DEST).parent
@@ -150,11 +158,16 @@ def normalize_relative_include(current_file: pathlib.Path, include_path: str) ->
     return 'xsp:///var/www/html/' + '/'.join(normalized_parts)
 
 def rewrite_relative_includes(current_file: pathlib.Path, text: str) -> str:
+    def docroot_repl(match: re.Match) -> str:
+        rewritten = normalize_relative_include(current_file, '/var/www/html' + match.group(4))
+        return f"{match.group(1)}{match.group(2)}'{rewritten}'{match.group(6)}"
+
     def repl(match: re.Match) -> str:
         path = match.group(4)
         rewritten = normalize_relative_include(current_file, path)
         return f"{match.group(1)}{match.group(2)}{match.group(3)}{rewritten}{match.group(5)}{match.group(6)}"
 
+    text = DOCROOT_INCLUDE_RE.sub(docroot_repl, text)
     return INCLUDE_RE.sub(repl, text)
 
 def normalize_frontend_versions(text: str) -> str:
