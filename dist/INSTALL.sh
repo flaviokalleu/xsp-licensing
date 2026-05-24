@@ -53,11 +53,11 @@ case "$MODE" in
   server|servidor|s)
     [[ -f install-server.sh ]] || { echo "${RED}✗ install-server.sh não encontrado.${NC}"; exit 1; }
     [[ -d api-license     ]] || { echo "${RED}✗ Pasta api-license/ faltando — bundle incompleto.${NC}"; exit 1; }
-    exec bash install-server.sh
+    exec bash install-server.sh "${@:2}"
     ;;
   painel|cliente|c|p)
     [[ -f install-painel.sh ]] || { echo "${RED}✗ install-painel.sh não encontrado.${NC}"; exit 1; }
-    exec bash install-painel.sh
+    exec bash install-painel.sh "${@:2}"
     ;;
   *)
     echo "${RED}✗ Modo desconhecido: $MODE${NC}"

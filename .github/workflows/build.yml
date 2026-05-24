@@ -80,7 +80,7 @@ jobs:
 
             Servidor central:
             ```bash
-            curl -sSL https://raw.githubusercontent.com/flaviokalleu/xsp-licensing/master/setup.sh | sudo bash
+            curl -sSL https://raw.githubusercontent.com/flaviokalleu/xsp-licensing/master/setup.sh | sudo bash -s -- DOMINIO_OU_IP email@dominio.com
             ```
 
             O `setup.sh` baixa primeiro:

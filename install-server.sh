@@ -47,9 +47,78 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+SERVER_HOST_INPUT="${XSP_SERVER_HOST:-${1:-}}"
+SERVER_EMAIL_INPUT="${XSP_SERVER_EMAIL:-${2:-}}"
+ADMIN_USER_INPUT="${XSP_ADMIN_USER:-}"
+
+normalize_host() {
+  local host="$1"
+  host="${host#http://}"
+  host="${host#https://}"
+  host="${host%%/*}"
+  printf '%s' "$host"
+}
+
+is_ip_host() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ || "$1" == *:* ]]
+}
+
+random_suffix() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 4
+  elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+    tr -d '-' </proc/sys/kernel/random/uuid | head -c 8
+    echo
+  else
+    printf '%08x\n' "$((RANDOM * RANDOM))"
+  fi
+}
+
+default_email_for_host() {
+  local host="$1"
+  local domain="$host"
+  is_ip_host "$domain" && domain="xsp.local"
+  printf 'admin-%s@%s' "$(random_suffix)" "$domain"
+}
+
+configure_from_host() {
+  SERVER_HOST_INPUT="$(normalize_host "$SERVER_HOST_INPUT")"
+  [[ -n "$SERVER_HOST_INPUT" ]] || return 1
+
+  if is_ip_host "$SERVER_HOST_INPUT"; then
+    warn "Modo IP: sem TLS. Nao use em producao com dados reais."
+    ACCESS_MODE="I"
+    PUBLIC_HOST="${SERVER_HOST_INPUT}"
+    API_HOST="${SERVER_HOST_INPUT}:8080"
+    ADM_HOST="${SERVER_HOST_INPUT}:8081"
+    PORTAL_HOST="${SERVER_HOST_INPUT}:8082"
+    REG_HOST="${SERVER_HOST_INPUT}:5000"
+    ACME_EMAIL="${SERVER_EMAIL_INPUT:-$(default_email_for_host "$SERVER_HOST_INPUT")}"
+  else
+    ACCESS_MODE="U"
+    PUBLIC_HOST="${SERVER_HOST_INPUT}"
+    API_HOST="${SERVER_HOST_INPUT}/api"
+    ADM_HOST="${SERVER_HOST_INPUT}"
+    PORTAL_HOST="${SERVER_HOST_INPUT}"
+    REG_HOST="${SERVER_HOST_INPUT}:5000"
+    ACME_EMAIL="${SERVER_EMAIL_INPUT:-$(default_email_for_host "$SERVER_HOST_INPUT")}"
+  fi
+
+  [[ "$ACME_EMAIL" =~ @ ]] || die "E-mail invalido: $ACME_EMAIL"
+  ADM_USER="${ADMIN_USER_INPUT:-admin}"
+  ok "Configuracao automatica: host=${PUBLIC_HOST}, modo=${ACCESS_MODE}."
+  return 0
+}
+
 # ─── coleta de entradas ──────────────────────────────────────────────────────
 if [[ ! -f .env ]] || ! grep -q "^API_HOST=" .env 2>/dev/null; then
 
+  AUTO_CONFIG=0
+  if configure_from_host; then
+    AUTO_CONFIG=1
+  fi
+
+  if [[ "$AUTO_CONFIG" -eq 0 ]]; then
   echo "Como este servidor vai ser acessado?"
   echo "  [S] Subdomínios separados com TLS  — recomendado para produção"
   echo "  [U] Um único domínio (paths /api, /admin...) + registry na porta 5000"
@@ -107,6 +176,7 @@ if [[ ! -f .env ]] || ! grep -q "^API_HOST=" .env 2>/dev/null; then
 
   read -rp "  Usuário admin-dashboard [admin]: " ADM_USER
   ADM_USER=${ADM_USER:-admin}
+  fi
 
   # Escreve .env
   cp .env.example .env 2>/dev/null || true
@@ -337,8 +407,8 @@ if [[ -f install-painel.sh ]]; then
 fi
 
 # ─── sobe o stack ────────────────────────────────────────────────────────────
-step "Subindo stack Docker (pode levar 2-3 min na 1ª vez)..."
-docker compose up -d --build 2>&1 | tail -8
+step "Subindo stack Docker (pode levar 2-3 min na primeira vez)..."
+COMPOSE_PROGRESS=plain docker compose up -d --build
 
 # ─── espera serviços ────────────────────────────────────────────────────────
 step "Aguardando API ficar pronta..."
