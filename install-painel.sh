@@ -169,18 +169,40 @@ validate_license_key() {
     || die "KEY invalida ou ausente. Use: bash install.sh XSP-XXXX-XXXX-XXXX-XXXX dominio email"
 }
 
+random_email_suffix() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 4
+  elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+    tr -d '-' </proc/sys/kernel/random/uuid | head -c 8
+    echo
+  else
+    printf '%08x\n' "$((RANDOM * RANDOM))"
+  fi
+}
+
 detect_domain_email() {
   PANEL_DOMAIN="${ARG_DOMAIN:-}"
   if [[ -z "$PANEL_DOMAIN" ]]; then
-    PANEL_DOMAIN=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null \
-      || curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null \
-      || hostname -I 2>/dev/null | awk '{print $1}' || echo "")
-    warn "Dominio/IP nao informado; usando detectado: ${PANEL_DOMAIN:-?}"
+    if [[ -r /dev/tty ]]; then
+      read -r -p "Dominio ou IP publico do painel: " PANEL_DOMAIN </dev/tty || true
+    fi
+    if [[ -z "$PANEL_DOMAIN" ]]; then
+      PANEL_DOMAIN=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null \
+        || curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null \
+        || hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+      warn "Dominio/IP nao informado; usando detectado: ${PANEL_DOMAIN:-?}"
+    fi
   fi
   [[ -n "$PANEL_DOMAIN" ]] || die "Nao foi possivel detectar o IP publico. Informe dominio/IP como segundo argumento."
 
   ADMIN_EMAIL="${ARG_EMAIL:-}"
-  [[ -n "$ADMIN_EMAIL" ]] || ADMIN_EMAIL="admin@${PANEL_DOMAIN}"
+  if [[ -z "$ADMIN_EMAIL" && -r /dev/tty ]]; then
+    read -r -p "E-mail do administrador: " ADMIN_EMAIL </dev/tty || true
+  fi
+  if [[ -z "$ADMIN_EMAIL" ]]; then
+    ADMIN_EMAIL="admin-$(random_email_suffix)@${PANEL_DOMAIN}"
+    warn "E-mail nao informado; usando gerado: $ADMIN_EMAIL"
+  fi
   [[ "$ADMIN_EMAIL" =~ @ ]] || die "E-mail invalido: $ADMIN_EMAIL"
 }
 

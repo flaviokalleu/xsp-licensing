@@ -77,10 +77,17 @@ if ($logged && ($_GET['ajax'] ?? '') === 'installations') {
 /* ---------- actions ---------- */
 $flash  = null;
 $newKey = null;
+$newEmail = '';
+$newDomain = '';
 
 if ($logged && ($_POST['action'] ?? '') === 'create_key') {
+    $newEmail = trim($_POST['email'] ?? '');
+    $newDomain = trim($_POST['domain'] ?? '');
+    if ($newEmail === '') {
+        $newEmail = 'admin-' . bin2hex(random_bytes(4)) . '@xsp.local';
+    }
     $r = api('POST', '/admin/keys', [
-        'email'         => trim($_POST['email']  ?? ''),
+        'email'         => $newEmail,
         'name'          => trim($_POST['name']   ?? ''),
         'plan_code'     => $_POST['plan']        ?? 'basic',
         'period_days'   => (int)($_POST['days']  ?? 30),
@@ -142,9 +149,12 @@ foreach ($licenses as $l) {
 }
 
 /* ---------- helpers ---------- */
-function installCmd(string $key, string $url): string {
+function installCmd(string $key, string $url, string $domain = 'DOMINIO_OU_IP', string $email = 'email@cliente.com'): string {
     if (!$url) return '';
-    return "curl -sSL {$url} | sudo bash -s -- {$key}";
+    return 'curl -sSL ' . escapeshellarg($url)
+        . ' | sudo bash -s -- ' . escapeshellarg($key)
+        . ' ' . escapeshellarg($domain)
+        . ' ' . escapeshellarg($email);
 }
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 ?>
@@ -308,9 +318,15 @@ form.inline { display:inline; }
 <?php if ($newKey && $INSTALL_URL): ?>
 <div class="card highlight">
   <h2>KEY gerada — envie este comando ao cliente</h2>
-  <p style="margin-bottom:10px">Execute na VPS do cliente:</p>
+  <p style="margin-bottom:10px">Informe o domínio/IP da VPS do cliente e confirme o e-mail antes de copiar:</p>
+  <div class="row" style="margin-bottom:10px">
+    <input id="new-domain" type="text" value="<?= h($newDomain) ?>" placeholder="dominio.com ou IP publico" oninput="updateInstallCommand('new')">
+    <input id="new-email" type="email" value="<?= h($newEmail) ?>" placeholder="cliente@exemplo.com" oninput="updateInstallCommand('new')">
+  </div>
   <div class="copy-row">
-    <div class="install-box" id="newcmd"><?= h(installCmd($newKey, $INSTALL_URL)) ?></div>
+    <div class="install-box" id="newcmd"
+         data-url="<?= h($INSTALL_URL) ?>"
+         data-key="<?= h($newKey) ?>"><?= h(installCmd($newKey, $INSTALL_URL, $newDomain ?: 'DOMINIO_OU_IP', $newEmail ?: 'email@cliente.com')) ?></div>
     <button class="btn" onclick="copyText('newcmd','newcmd-ok')">Copiar</button>
   </div>
   <span class="copied" id="newcmd-ok" style="display:none">✓ Copiado!</span>
@@ -330,7 +346,8 @@ form.inline { display:inline; }
   <form method="post">
     <input type="hidden" name="action" value="create_key">
     <div class="row" style="margin-bottom:8px">
-      <input type="email"  name="email" placeholder="cliente@exemplo.com" required>
+      <input type="text"   name="domain" placeholder="dominio.com ou IP publico">
+      <input type="email"  name="email" placeholder="cliente@exemplo.com (opcional)">
       <input type="text"   name="name"  placeholder="Nome do cliente">
       <select name="plan">
         <option value="trial">Trial (7 dias)</option>
@@ -402,7 +419,7 @@ form.inline { display:inline; }
         $maxI   = (int)($l['max_instances'] ?? 1);
         $exp    = (string)($l['expires_at'] ?? '');
         $expD   = $exp ? max(0, (int)(((int)strtotime($exp) - time()) / 86400)) : 0;
-        $cmd    = ($INSTALL_URL && $status === 'active') ? installCmd($key, $INSTALL_URL) : '';
+        $cmd    = ($INSTALL_URL && $status === 'active') ? installCmd($key, $INSTALL_URL, 'DOMINIO_OU_IP', $email ?: 'email@cliente.com') : '';
         $cid    = 'cmd'.$i;
         $rid    = 'row'.$i;
         $iid    = 'inst'.$i;
@@ -523,6 +540,24 @@ function copyText(srcId, okId) {
         setTimeout(() => el.style.display = 'none', 2000);
     });
 }
+
+/* ── install command ── */
+function shellArg(value) {
+    value = String(value || '').trim();
+    return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+}
+
+function updateInstallCommand(prefix) {
+    const box = document.getElementById(prefix + 'cmd');
+    if (!box) return;
+    const domain = document.getElementById(prefix + '-domain')?.value.trim() || 'DOMINIO_OU_IP';
+    const email = document.getElementById(prefix + '-email')?.value.trim() || 'email@cliente.com';
+    box.textContent = 'curl -sSL ' + shellArg(box.dataset.url)
+        + ' | sudo bash -s -- ' + shellArg(box.dataset.key)
+        + ' ' + shellArg(domain)
+        + ' ' + shellArg(email);
+}
+updateInstallCommand('new');
 
 /* ── extend modal ── */
 function openExtend(id) {
