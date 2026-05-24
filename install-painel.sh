@@ -633,8 +633,11 @@ docker compose -f "\$INSTALL_PATH/docker-compose.yml" down -v 2>/dev/null || tru
 echo "\${GRN}✓\${NC} Containers e volumes removidos."
 
 # Limpa regras de firewall relacionadas (melhor esforço)
-iptables -D FORWARD -i \$(ip link 2>/dev/null | grep -oP 'br-[a-f0-9]+' | head -1) \
-  -j DROP 2>/dev/null || true
+FW_IFACE=\$(ip link 2>/dev/null | grep -oP 'br-[a-f0-9]+' | head -1 || true)
+if [[ -n "\$FW_IFACE" ]]; then
+  iptables -D FORWARD -i "\$FW_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+  iptables -D FORWARD -i "\$FW_IFACE" -j DROP 2>/dev/null || true
+fi
 
 # Remove diretório
 echo "\${CYN}→\${NC} Removendo \$INSTALL_PATH ..."
@@ -676,8 +679,10 @@ fi
 [[ -z "$WAN_IFACE" ]] && WAN_IFACE=$(ip link 2>/dev/null | grep -oP 'br-[a-f0-9]+' | head -1 || echo "")
 
 if [[ -n "$API_IP" && -n "$WAN_IFACE" ]]; then
-  iptables -I FORWARD -i "$WAN_IFACE" -d "$API_IP" -j ACCEPT 2>/dev/null || true
+  iptables -D FORWARD -i "$WAN_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
   iptables -I FORWARD -i "$WAN_IFACE" ! -d "$API_IP" -j DROP  2>/dev/null || true
+  iptables -I FORWARD -i "$WAN_IFACE" -d "$API_IP" -j ACCEPT 2>/dev/null || true
+  iptables -I FORWARD -i "$WAN_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
   mkdir -p /etc/iptables
   iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
   ok "Firewall: saída do painel restrita a $API_HOST_ONLY ($API_IP)."

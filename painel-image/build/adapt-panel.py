@@ -116,6 +116,45 @@ LEAK_RE = re.compile(
 
 PANEL_DISPLAY_VERSION = 'Alfa v10'
 
+INCLUDE_RE = re.compile(
+    r"""\b(require|require_once|include|include_once)(\s*\(?\s*)(['"])([^'"]+\.php)(\3)(\s*\)?)""",
+    re.IGNORECASE,
+)
+
+def normalize_relative_include(current_file: pathlib.Path, include_path: str) -> str:
+    if re.match(r"""^[a-z][a-z0-9+.-]*://""", include_path, re.IGNORECASE):
+        return include_path
+
+    # Paths that are relative to the panel source must also be loaded through
+    # the encrypted stream wrapper after the build deletes clear PHP files.
+    if include_path.startswith('/'):
+        rel = pathlib.PurePosixPath(include_path.lstrip('/'))
+    else:
+        current_rel_dir = current_file.relative_to(DEST).parent
+        rel = pathlib.PurePosixPath(current_rel_dir.as_posix()) / include_path
+
+    normalized_parts = []
+    for part in rel.parts:
+        if part in ('', '.'):
+            continue
+        if part == '..':
+            if normalized_parts:
+                normalized_parts.pop()
+            continue
+        normalized_parts.append(part)
+
+    if not normalized_parts:
+        return include_path
+    return 'xsp:///var/www/html/' + '/'.join(normalized_parts)
+
+def rewrite_relative_includes(current_file: pathlib.Path, text: str) -> str:
+    def repl(match: re.Match) -> str:
+        path = match.group(4)
+        rewritten = normalize_relative_include(current_file, path)
+        return f"{match.group(1)}{match.group(2)}{match.group(3)}{rewritten}{match.group(5)}{match.group(6)}"
+
+    return INCLUDE_RE.sub(repl, text)
+
 def normalize_frontend_versions(text: str) -> str:
     text = re.sub(
         r"""Versão atual\s*:\s*[^<]+""",
@@ -169,6 +208,7 @@ for php in DEST.rglob('*.php'):
     original = text
     for pat, repl in PATTERNS:
         text = pat.sub(repl, text)
+    text = rewrite_relative_includes(php, text)
     text = re.sub(
         r"""ini_set\(\s*['"]display_errors['"]\s*,\s*1\s*\)\s*;""",
         "ini_set('display_errors', 0);",
