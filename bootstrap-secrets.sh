@@ -7,6 +7,16 @@ set -euo pipefail
 
 ENV_FILE="${1:-.env}"
 
+die() { echo "✗ $*" >&2; exit 1; }
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Dependencia ausente: $1"
+}
+
+for cmd in docker python3 openssl grep cut; do
+  require_cmd "$cmd"
+done
+
 [[ -f "$ENV_FILE" ]] || cp .env.example "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -30,8 +40,16 @@ open('$ENV_FILE', 'w').write(content)
 # Retorna true se a chave não existir ou estiver vazia
 need() {
   local cur
-  cur=$(grep "^${1}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+  cur=$(grep "^${1}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
   [[ -z "$cur" ]]
+}
+
+rand_hex() {
+  local bytes="$1"
+  local out
+  out="$(openssl rand -hex "$bytes")" || die "Falha ao gerar segredo com openssl"
+  [[ -n "$out" ]] || die "openssl retornou segredo vazio"
+  printf '%s' "$out"
 }
 
 echo "→ Gerando segredos via container Go..."
@@ -61,7 +79,7 @@ done <<< "$SECRETS"
 # ── Segredos simples: DB, registry ───────────────────────────────────────────
 for k in DB_PASS REG_PASS; do
   if need "$k"; then
-    set_env "$k" "$(openssl rand -hex 16)"
+    set_env "$k" "$(rand_hex 16)"
     echo "  + $k"
   fi
 done
@@ -69,7 +87,7 @@ done
 # ── Senha do admin dashboard (plaintext no .env) ──────────────────────────────
 # Usa ADMIN_DASH_PASS em plaintext — o PHP admin verifica via hash_equals ou bcrypt
 if need ADMIN_DASH_PASS; then
-  ADMIN_DASH_PASS_VAL=$(openssl rand -hex 12)
+  ADMIN_DASH_PASS_VAL=$(rand_hex 12)
   set_env ADMIN_DASH_PASS "$ADMIN_DASH_PASS_VAL"
   set_env ADMIN_DASH_USER "admin"
   echo "  + ADMIN_DASH_PASS"
@@ -122,15 +140,20 @@ fi
 # ── htpasswd do registry ─────────────────────────────────────────────────────
 if [[ ! -f api-license/auth/htpasswd ]]; then
   mkdir -p api-license/auth
-  REG_USER=$(grep "^REG_USER=" "$ENV_FILE" | cut -d= -f2-)
-  REG_PASS=$(grep "^REG_PASS=" "$ENV_FILE" | cut -d= -f2-)
+  REG_USER=$(grep "^REG_USER=" "$ENV_FILE" | cut -d= -f2- || true)
+  REG_PASS=$(grep "^REG_PASS=" "$ENV_FILE" | cut -d= -f2- || true)
   [[ -n "$REG_USER" && -n "$REG_PASS" ]] \
-    || { echo "✗ REG_USER ou REG_PASS não encontrado no .env" >&2; exit 1; }
+    || die "REG_USER ou REG_PASS nao encontrado no .env"
   docker run --rm httpd:2-alpine htpasswd -Bbn "$REG_USER" "$REG_PASS" \
     > api-license/auth/htpasswd
   chmod 640 api-license/auth/htpasswd
   echo "  + api-license/auth/htpasswd (registry)"
 fi
+
+for k in DB_PASS REG_PASS ADMIN_DASH_PASS HMAC_PUBLIC_SECRET JWT_SECRET ADMIN_TOKEN RELEASE_MASTER_KEY ED25519_PRIVATE_KEY_B64 ED25519_PUBLIC_KEY_B64; do
+  v=$(grep "^${k}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+  [[ -n "$v" ]] || die "Segredo obrigatorio ficou vazio: $k"
+done
 
 echo
 echo "✓ Segredos prontos em $ENV_FILE"

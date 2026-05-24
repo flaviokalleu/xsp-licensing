@@ -132,7 +132,7 @@ collect_server_config() {
 
 step "Instalando dependencias basicas..."
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl unzip >/dev/null
+apt-get install -y -qq ca-certificates curl unzip openssl python3 >/dev/null
 ok "Dependencias basicas instaladas."
 
 if ! command -v docker >/dev/null 2>&1; then

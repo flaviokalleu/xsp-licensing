@@ -68,12 +68,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgres://xsp:${DB_PASS}@db:5432/xsp_license?sslmode=disable
+      DATABASE_URL: postgres://xsp:${DB_PASS:?DB_PASS missing}@db:5432/xsp_license?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       LISTEN_ADDR: ":8443"
       REGISTRY_URL: ${REG_HOST}
       REGISTRY_USER: ${REG_USER}
-      REGISTRY_PASSWORD: ${REG_PASS}
+      REGISTRY_PASSWORD: ${REG_PASS:?REG_PASS missing}
     depends_on:
       db:
         condition: service_healthy
@@ -94,9 +94,9 @@ services:
     restart: unless-stopped
     environment:
       ADMIN_API_BASE: http://api:8443
-      ADMIN_API_TOKEN: ${ADMIN_TOKEN}
+      ADMIN_API_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN missing}
       ADMIN_DASH_USER: ${ADM_USER}
-      ADMIN_DASH_PASS: ${ADMIN_DASH_PASS}
+      ADMIN_DASH_PASS: ${ADMIN_DASH_PASS:?ADMIN_DASH_PASS missing}
       INSTALL_URL: ${INSTALL_URL:-}
     depends_on:
       api:
@@ -123,16 +123,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: xsp
-      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS missing}
       POSTGRES_DB: xsp_license
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./api-license/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "xsp"]
+      test: ["CMD-SHELL", "pg_isready -U xsp -d xsp_license"]
+      start_period: 30s
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
     networks: [xsp]
 
   # ────────────────── Redis ───────────────────────────────────────────────

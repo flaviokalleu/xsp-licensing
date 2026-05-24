@@ -39,6 +39,11 @@ echo
 [[ -f docker-compose.yml && -d api-license ]] \
   || die "Rode este script dentro do diretório 'licensing/'."
 
+step "Instalando dependencias do instalador..."
+apt-get update -qq
+apt-get install -y -qq ca-certificates curl openssl python3 >/dev/null
+ok "Dependencias do instalador prontas."
+
 # Carrega .env existente → permite re-execução e instalação não-interativa
 if [[ -f .env ]]; then
   set -a
@@ -108,6 +113,67 @@ configure_from_host() {
   ADM_USER="${ADMIN_USER_INPUT:-admin}"
   ok "Configuracao automatica: host=${PUBLIC_HOST}, modo=${ACCESS_MODE}."
   return 0
+}
+
+env_value() {
+  grep "^${1}=" .env 2>/dev/null | cut -d= -f2- || true
+}
+
+validate_required_env() {
+  local missing=0
+  local required=(
+    ACCESS_MODE PUBLIC_HOST API_HOST ADM_HOST PORTAL_HOST REG_HOST ACME_EMAIL ADM_USER
+    DB_PASS REG_PASS ADMIN_DASH_PASS HMAC_PUBLIC_SECRET JWT_SECRET ADMIN_TOKEN
+    RELEASE_MASTER_KEY ED25519_PRIVATE_KEY_B64 ED25519_PUBLIC_KEY_B64
+  )
+  for k in "${required[@]}"; do
+    if [[ -z "$(env_value "$k")" ]]; then
+      echo "  - $k vazio ou ausente" >&2
+      missing=1
+    fi
+  done
+  [[ "$missing" -eq 0 ]] || die ".env incompleto. Corrija os campos acima e rode novamente."
+}
+
+show_compose_debug() {
+  warn "Diagnostico Docker:"
+  docker compose ps || true
+  echo
+  warn "Logs do banco:"
+  docker compose logs --tail=160 db || true
+}
+
+recover_failed_db_volume() {
+  [[ ! -f .xsp-install-complete ]] || return 1
+  local cid state health
+  cid=$(docker compose ps -aq db 2>/dev/null || true)
+  [[ -n "$cid" ]] || return 1
+  state=$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)
+  health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || true)
+  [[ "$state" =~ ^(exited|dead)$ || "$health" == "unhealthy" ]] || return 1
+
+  warn "Banco de uma instalacao incompleta ficou quebrado (${state}/${health}); recriando volume pgdata."
+  docker logs --tail=80 "$cid" || true
+  docker compose rm -fs db >/dev/null 2>&1 || true
+  docker volume rm xsp-licensing_pgdata >/dev/null 2>&1 || true
+  return 0
+}
+
+compose_up_or_die() {
+  recover_failed_db_volume || true
+  if COMPOSE_PROGRESS=plain docker compose up -d --build; then
+    return
+  fi
+
+  show_compose_debug
+  if recover_failed_db_volume; then
+    step "Tentando subir o stack novamente com banco limpo..."
+    if COMPOSE_PROGRESS=plain docker compose up -d --build; then
+      return
+    fi
+    show_compose_debug
+  fi
+  die "docker compose falhou. Veja os logs acima."
 }
 
 # ─── coleta de entradas ──────────────────────────────────────────────────────
@@ -235,6 +301,7 @@ fi
 # ─── gera segredos ───────────────────────────────────────────────────────────
 step "Gerando segredos (via container Go)..."
 bash bootstrap-secrets.sh .env
+validate_required_env
 
 # ─── Caddyfile e docker-compose override por modo de acesso ──────────────────
 if [[ "$ACCESS_MODE" == "U" ]]; then
@@ -408,7 +475,7 @@ fi
 
 # ─── sobe o stack ────────────────────────────────────────────────────────────
 step "Subindo stack Docker (pode levar 2-3 min na primeira vez)..."
-COMPOSE_PROGRESS=plain docker compose up -d --build
+compose_up_or_die
 
 # ─── espera serviços ────────────────────────────────────────────────────────
 step "Aguardando API ficar pronta..."
@@ -427,6 +494,7 @@ if [[ "$ACCESS_MODE" != "I" ]]; then
 fi
 
 # ─── resumo ──────────────────────────────────────────────────────────────────
+touch .xsp-install-complete
 set -a; source .env 2>/dev/null || true; set +a
 ACCESS_MODE=${ACCESS_MODE:-S}
 
