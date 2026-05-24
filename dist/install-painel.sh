@@ -22,6 +22,7 @@ INSTALL_URL="__INSTALL_URL__"
 PANEL_VERSION="10.0.3"
 PANEL_REPO="flaviokalleu/xsp-painel"
 PANEL_REF="main"
+PANEL_RELEASE_URL="https://github.com/${PANEL_REPO}/releases/latest/download/xsp-painel-source.zip"
 PANEL_SOURCE_URL="https://github.com/${PANEL_REPO}/archive/refs/heads/${PANEL_REF}.zip"
 
 INSTALL_PATH="/opt/xsp"
@@ -493,13 +494,16 @@ download_panel_source() {
   local zip_file="$cache_dir/panel.zip"
   local extract_dir="$cache_dir/extract"
 
-  step "Baixando painel do GitHub (${PANEL_REPO}@${PANEL_REF})..."
+  step "Baixando painel pelo GitHub Release..."
   rm -rf "$cache_dir"
   mkdir -p "$extract_dir"
-  curl_retry --max-time 300 "$PANEL_SOURCE_URL" -o "$zip_file"
+  if ! curl_retry --max-time 300 "$PANEL_RELEASE_URL" -o "$zip_file"; then
+    warn "Release do painel ainda nao disponivel; usando branch ${PANEL_REF}."
+    curl_retry --max-time 300 "$PANEL_SOURCE_URL" -o "$zip_file"
+  fi
   unzip -q "$zip_file" -d "$extract_dir"
 
-  PANEL_SRC_DIR=$(find "$extract_dir" -mindepth 2 -maxdepth 2 -type d -name script | head -1 || true)
+  PANEL_SRC_DIR=$(find "$extract_dir" -mindepth 1 -maxdepth 3 -type d -name script | head -1 || true)
   [[ -n "$PANEL_SRC_DIR" && -d "$PANEL_SRC_DIR" ]] \
     || die "Repositorio baixado nao contem a pasta script/."
   ok "Codigo do painel baixado."
@@ -566,6 +570,7 @@ XSP_VERSION=${PANEL_VERSION}
 PANEL_IMAGE=${LOCAL_IMAGE}
 PANEL_DOMAIN=${PANEL_DOMAIN}
 PANEL_EMAIL=${ADMIN_EMAIL}
+PANEL_RELEASE_URL=${PANEL_RELEASE_URL}
 PANEL_SOURCE_URL=${PANEL_SOURCE_URL}
 
 DB_NAME=xsp_panel
