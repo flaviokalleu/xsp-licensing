@@ -302,6 +302,7 @@ fi
 step "Gerando segredos (via container Go)..."
 bash bootstrap-secrets.sh .env
 validate_required_env
+set -a; source .env 2>/dev/null || true; set +a
 
 # ─── Caddyfile e docker-compose override por modo de acesso ──────────────────
 if [[ "$ACCESS_MODE" == "U" ]]; then
