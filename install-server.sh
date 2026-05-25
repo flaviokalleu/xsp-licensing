@@ -463,12 +463,19 @@ if [[ -f install-painel.sh ]]; then
   else
     echo "API_SCHEME=${_PROTO}" >> .env
   fi
+  _INSTALL_URL="${_PROTO}://${_PUBLIC_HOST}/install.sh"
+  if grep -q "^INSTALL_URL=" .env; then
+    sed -i "s|^INSTALL_URL=.*|INSTALL_URL=${_INSTALL_URL}|" .env
+  else
+    echo "INSTALL_URL=${_INSTALL_URL}" >> .env
+  fi
+  set -a; source .env 2>/dev/null || true; set +a
 
   sed \
     -e "s|__HMAC_PUBLIC_SECRET_64_HEX_CHARS__|${HMAC}|" \
     -e "s|https://license.seudominio.com|${_PROTO}://${_API_HOST}|g" \
     -e "s|registry.seudominio.com|${_REG_HOST}|g" \
-    -e "s|__INSTALL_URL__|${_PROTO}://${_PUBLIC_HOST}/install.sh|g" \
+    -e "s|__INSTALL_URL__|${_INSTALL_URL}|g" \
     install-painel.sh > www-public/install.sh
   chmod 755 www-public/install.sh
   ok "install.sh personalizado em www-public/"
