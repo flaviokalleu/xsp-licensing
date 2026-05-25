@@ -8,6 +8,8 @@
  *   ADMIN_DASH_USER   usuário do dashboard
  *   ADMIN_DASH_PASS   senha (bcrypt ou plaintext)
  *   INSTALL_URL       URL do install.sh público
+ *   PUBLIC_HOST       domínio/IP público do install.sh
+ *   API_SCHEME        http ou https
  */
 
 declare(strict_types=1);
@@ -17,11 +19,71 @@ function env(string $k, string $d = ''): string {
     $v = getenv($k); return ($v === false || $v === '') ? $d : $v;
 }
 
+function clean_public_host(string $host): string {
+    $host = trim($host);
+    $host = preg_replace('#^https?://#i', '', $host);
+    $host = preg_replace('#/.*$#', '', $host);
+    return preg_replace('/[^A-Za-z0-9.\-:\[\]]/', '', $host) ?? '';
+}
+
+function request_scheme(): string {
+    $forwarded = strtolower(trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwarded === 'http' || $forwarded === 'https') {
+        return $forwarded;
+    }
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        return 'https';
+    }
+    return (($_SERVER['SERVER_PORT'] ?? '') === '443') ? 'https' : 'http';
+}
+
+function normalize_install_url(string $url): string {
+    $url = trim($url);
+    if ($url === '' || str_contains($url, '__INSTALL_URL__') || str_contains($url, 'seudominio.com')) {
+        return '';
+    }
+    if (!preg_match('#^https?://#i', $url)) {
+        return '';
+    }
+    $path = (string)(parse_url($url, PHP_URL_PATH) ?: '');
+    if (!str_ends_with($path, '/install.sh')) {
+        $url = rtrim($url, '/') . '/install.sh';
+    }
+    return $url;
+}
+
+function resolve_install_url(): string {
+    $fromEnv = normalize_install_url(env('INSTALL_URL', ''));
+    if ($fromEnv !== '') {
+        return $fromEnv;
+    }
+
+    $scheme = strtolower(env('API_SCHEME', request_scheme()));
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        $scheme = request_scheme();
+    }
+
+    $publicHost = clean_public_host(env('PUBLIC_HOST', ''));
+    if ($publicHost !== '') {
+        return $scheme . '://' . $publicHost . '/install.sh';
+    }
+
+    $requestHost = clean_public_host((string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? ''));
+    if (env('ACCESS_MODE', '') === 'I' || preg_match('/^([0-9]{1,3}\.){3}[0-9]{1,3}:(8080|8081|8082)$/', $requestHost)) {
+        $requestHost = preg_replace('/:(8080|8081|8082)$/', '', $requestHost) ?? $requestHost;
+    }
+    if ($requestHost !== '') {
+        return request_scheme() . '://' . $requestHost . '/install.sh';
+    }
+
+    return '';
+}
+
 $API         = env('ADMIN_API_BASE',  'http://localhost:8443');
 $TOK         = env('ADMIN_API_TOKEN', '');
 $USER        = env('ADMIN_DASH_USER', 'admin');
 $PASS        = env('ADMIN_DASH_PASS', 'admin');
-$INSTALL_URL = env('INSTALL_URL',     '');
+$INSTALL_URL = resolve_install_url();
 
 /* ---------- auth ---------- */
 function check_pw(string $given, string $stored): bool {
@@ -149,12 +211,38 @@ foreach ($licenses as $l) {
 }
 
 /* ---------- helpers ---------- */
-function installCmd(string $key, string $url, string $domain = 'DOMINIO_OU_IP', string $email = 'email@cliente.com'): string {
+function installCmd(string $key, string $url, string $domain = '', string $email = ''): string {
     if (!$url) return '';
-    return 'curl -sSL ' . escapeshellarg($url)
-        . ' | sudo bash -s -- ' . escapeshellarg($key)
-        . ' ' . escapeshellarg($domain)
-        . ' ' . escapeshellarg($email);
+    $cmd = 'curl -sSL ' . escapeshellarg($url)
+        . ' | sudo bash -s -- ' . escapeshellarg($key);
+    if ($domain !== '') {
+        $cmd .= ' ' . escapeshellarg($domain);
+    }
+    if ($email !== '') {
+        $cmd .= ' ' . escapeshellarg($email);
+    }
+    return $cmd;
+}
+function installFullCmd(string $key, string $url, string $domain = 'DOMINIO_OU_IP', string $email = 'email@cliente.com'): string {
+    return installCmd($key, $url, $domain, $email);
+}
+function statusCmd(string $url): string {
+    return $url ? 'curl -sSL ' . escapeshellarg($url) . ' | sudo bash -s -- --status' : '';
+}
+function updateCmd(string $url): string {
+    return $url ? 'curl -sSL ' . escapeshellarg($url) . ' | sudo bash -s -- --update' : '';
+}
+function uninstallCmd(): string {
+    return 'sudo bash /opt/xsp/uninstall.sh';
+}
+function commandList(string $key, string $url, string $domain = 'DOMINIO_OU_IP', string $email = 'email@cliente.com'): array {
+    return [
+        'install-full' => ['Instalar completo', installFullCmd($key, $url, $domain, $email)],
+        'install-key'  => ['Instalar so com KEY', installCmd($key, $url)],
+        'status'       => ['Status', statusCmd($url)],
+        'update'       => ['Atualizar', updateCmd($url)],
+        'remove'       => ['Remover', uninstallCmd()],
+    ];
 }
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 ?>
@@ -234,6 +322,12 @@ form.inline { display:inline; }
 .copy-row { display:flex; align-items:flex-start; gap:8px; }
 .copy-row .install-box { flex:1; }
 .copied { color:var(--accent); font-size:11px; }
+.command-list { display:grid; gap:10px; margin-top:12px; }
+.command-item { display:grid; gap:5px; }
+.command-label { color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+.cmd-details summary { cursor:pointer; color:var(--accent); font-weight:600; }
+.cmd-details[open] summary { margin-bottom:8px; }
+.cmd-details .command-list { min-width:420px; }
 
 /* ── Filters ── */
 .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
@@ -314,7 +408,15 @@ form.inline { display:inline; }
   </div>
 </div>
 
-<!-- ── KEY recém-gerada ── -->
+<!-- Instalador publico -->
+<?php if ($INSTALL_URL): ?>
+<div class="card">
+  <h2>Instalador publico</h2>
+  <p class="muted">O painel admin vai usar este dominio/IP para montar os comandos:</p>
+  <code><?= h($INSTALL_URL) ?></code>
+</div>
+<?php endif; ?>
+
 <?php if ($newKey && $INSTALL_URL): ?>
 <div class="card highlight">
   <h2>KEY gerada — envie este comando ao cliente</h2>
@@ -326,11 +428,29 @@ form.inline { display:inline; }
   <div class="copy-row">
     <div class="install-box" id="newcmd"
          data-url="<?= h($INSTALL_URL) ?>"
-         data-key="<?= h($newKey) ?>"><?= h(installCmd($newKey, $INSTALL_URL, $newDomain ?: 'DOMINIO_OU_IP', $newEmail ?: 'email@cliente.com')) ?></div>
+         data-key="<?= h($newKey) ?>"><?= h(installFullCmd($newKey, $INSTALL_URL, $newDomain ?: 'DOMINIO_OU_IP', $newEmail ?: 'email@cliente.com')) ?></div>
     <button class="btn" onclick="copyText('newcmd','newcmd-ok')">Copiar</button>
   </div>
   <span class="copied" id="newcmd-ok" style="display:none">✓ Copiado!</span>
+  <div class="command-list">
+    <?php foreach ([
+        'newcmd-key' => ['Instalar so com KEY', installCmd($newKey, $INSTALL_URL)],
+        'newcmd-status' => ['Status', statusCmd($INSTALL_URL)],
+        'newcmd-update' => ['Atualizar', updateCmd($INSTALL_URL)],
+        'newcmd-remove' => ['Remover', uninstallCmd()],
+    ] as $cmdId => $item): ?>
+    <div class="command-item">
+      <div class="command-label"><?= h($item[0]) ?></div>
+      <div class="copy-row">
+        <div class="install-box" id="<?= h($cmdId) ?>"><?= h($item[1]) ?></div>
+        <button class="btn" onclick="copyText('<?= h($cmdId) ?>','<?= h($cmdId) ?>-ok')">Copiar</button>
+      </div>
+      <span class="copied" id="<?= h($cmdId) ?>-ok" style="display:none">Copiado!</span>
+    </div>
+    <?php endforeach; ?>
+  </div>
   <p class="muted" style="margin-top:10px">KEY: <strong><?= h($newKey) ?></strong></p>
+  <p class="muted">Install URL: <code><?= h($INSTALL_URL) ?></code></p>
 </div>
 <?php elseif ($newKey): ?>
 <div class="card highlight">
@@ -419,7 +539,8 @@ form.inline { display:inline; }
         $maxI   = (int)($l['max_instances'] ?? 1);
         $exp    = (string)($l['expires_at'] ?? '');
         $expD   = $exp ? max(0, (int)(((int)strtotime($exp) - time()) / 86400)) : 0;
-        $cmd    = ($INSTALL_URL && $status === 'active') ? installCmd($key, $INSTALL_URL, 'DOMINIO_OU_IP', $email ?: 'email@cliente.com') : '';
+        $cmds   = ($INSTALL_URL && $status === 'active') ? commandList($key, $INSTALL_URL, 'DOMINIO_OU_IP', $email ?: 'email@cliente.com') : [];
+        $cmd    = $cmds['install-full'][1] ?? '';
         $cid    = 'cmd'.$i;
         $rid    = 'row'.$i;
         $iid    = 'inst'.$i;
@@ -448,11 +569,30 @@ form.inline { display:inline; }
         <?php if ($INSTALL_URL): ?>
         <td>
           <?php if ($cmd): ?>
+          <details class="cmd-details">
+            <summary>Ver comandos</summary>
+            <div class="command-list">
+              <div class="command-item">
+                <div class="command-label">Instalar completo</div>
           <div style="display:flex;align-items:center;gap:5px;">
             <div class="install-box-sm" id="<?= $cid ?>"><?= h($cmd) ?></div>
             <button class="btn copy" onclick="copyText('<?= $cid ?>','<?= $cid ?>-ok')">Copiar</button>
           </div>
           <span class="copied" id="<?= $cid ?>-ok" style="display:none">✓</span>
+              </div>
+          <?php foreach ($cmds as $slug => $item):
+              if ($slug === 'install-full') continue;
+              $cmdId = $cid . '-' . $slug;
+          ?>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:6px;">
+            <span class="command-label" style="min-width:92px"><?= h($item[0]) ?></span>
+            <div class="install-box-sm" id="<?= h($cmdId) ?>"><?= h($item[1]) ?></div>
+            <button class="btn copy" onclick="copyText('<?= h($cmdId) ?>','<?= h($cmdId) ?>-ok')">Copiar</button>
+          </div>
+          <span class="copied" id="<?= h($cmdId) ?>-ok" style="display:none">OK</span>
+          <?php endforeach; ?>
+            </div>
+          </details>
           <?php else: ?><span class="muted">—</span><?php endif; ?>
         </td>
         <?php endif; ?>

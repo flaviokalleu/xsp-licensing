@@ -98,6 +98,9 @@ services:
       ADMIN_DASH_USER: ${ADM_USER}
       ADMIN_DASH_PASS: ${ADMIN_DASH_PASS:?ADMIN_DASH_PASS missing}
       INSTALL_URL: ${INSTALL_URL:-}
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      API_SCHEME: ${API_SCHEME:-}
+      ACCESS_MODE: ${ACCESS_MODE:-}
     depends_on:
       api:
         condition: service_healthy

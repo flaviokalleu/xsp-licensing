@@ -555,3 +555,10 @@ echo "    1) Acesse ${_ADMIN_URL} → crie sua 1ª KEY"
 echo "    2) Empacote o painel: make release"
 echo "    3) Mande o cliente abrir: ${_INSTALL_URL}?key=XSP-..."
 echo
+echo "  ${YEL}Comandos do painel cliente:${NC}"
+echo "    Instalar:   curl -sSL ${_INSTALL_URL} | sudo bash -s -- XSP-XXXX-XXXX-XXXX-XXXX DOMINIO_OU_IP email@cliente.com"
+echo "    Key apenas: curl -sSL ${_INSTALL_URL} | sudo bash -s -- XSP-XXXX-XXXX-XXXX-XXXX"
+echo "    Status:     curl -sSL ${_INSTALL_URL} | sudo bash -s -- --status"
+echo "    Atualizar:  curl -sSL ${_INSTALL_URL} | sudo bash -s -- --update"
+echo "    Remover:    sudo bash /opt/xsp/uninstall.sh"
+echo

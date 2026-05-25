@@ -485,6 +485,13 @@ func printSummary(env envMap, adminPassClear string, showPass bool) {
 	fmt.Println("    3. O dashboard mostra o comando pronto para copiar e enviar ao cliente:")
 	fmt.Printf("       %scurl -sSL %s | sudo bash -s -- XSP-XXXX-XXXX%s\n", clrCyn, installURL, clrNC)
 	fmt.Println()
+	fmt.Printf("  %sComandos do painel cliente:%s\n", clrYel, clrNC)
+	fmt.Printf("       %sInstalar:   curl -sSL %s | sudo bash -s -- XSP-XXXX-XXXX-XXXX-XXXX DOMINIO_OU_IP email@cliente.com%s\n", clrCyn, installURL, clrNC)
+	fmt.Printf("       %sKey apenas: curl -sSL %s | sudo bash -s -- XSP-XXXX-XXXX-XXXX-XXXX%s\n", clrCyn, installURL, clrNC)
+	fmt.Printf("       %sStatus:     curl -sSL %s | sudo bash -s -- --status%s\n", clrCyn, installURL, clrNC)
+	fmt.Printf("       %sAtualizar:  curl -sSL %s | sudo bash -s -- --update%s\n", clrCyn, installURL, clrNC)
+	fmt.Printf("       %sRemover:    sudo bash /opt/xsp/uninstall.sh%s\n", clrCyn, clrNC)
+	fmt.Println()
 	fmt.Printf("    %s⚠ Cada KEY permite exatamente 1 instalação.%s\n", clrYel, clrNC)
 	fmt.Println()
 }
