@@ -72,14 +72,24 @@ func main() {
 	})
 
 	// Public, HMAC-signed
+	// Rate limits separados por endpoint para evitar 429 em ambientes com muitos workers PHP.
+	// Heartbeat: limite alto (workers PHP-FPM batem a cada 5 min; 200/min cobre ~1000 workers).
+	// Activate/deactivate: limite baixo pois só ocorrem no boot/desativação.
 	v1 := app.Group("/v1",
 		middleware.HMACVerify(cfg.HMACSecret, cch, 60*time.Second),
-		middleware.RateLimitByIP(cch, "v1", 30, 1*time.Minute),
 	)
-	v1.Post("/activate", pub.Activate)
-	v1.Post("/heartbeat", pub.Heartbeat)
-	v1.Post("/deactivate", pub.Deactivate)
-	v1.Post("/fraud/report", pub.ReportFraud)
+	v1.Post("/activate",
+		middleware.RateLimitByIP(cch, "activate", 20, 1*time.Minute),
+		pub.Activate)
+	v1.Post("/heartbeat",
+		middleware.RateLimitByIP(cch, "heartbeat", 200, 1*time.Minute),
+		pub.Heartbeat)
+	v1.Post("/deactivate",
+		middleware.RateLimitByIP(cch, "deactivate", 10, 1*time.Minute),
+		pub.Deactivate)
+	v1.Post("/fraud/report",
+		middleware.RateLimitByIP(cch, "fraud", 30, 1*time.Minute),
+		pub.ReportFraud)
 
 	// Webhooks (sem HMAC nosso — eles têm assinatura própria)
 	app.Post("/webhooks/mp", mp.Handle)

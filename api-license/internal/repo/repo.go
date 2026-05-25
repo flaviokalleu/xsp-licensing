@@ -38,13 +38,26 @@ var (
 // ===== Licenses =====
 
 func (r *Repo) FindLicenseByHash(ctx context.Context, hash string) (*model.License, error) {
-	row := r.pool.QueryRow(ctx, `
+	return r.scanLicense(r.pool.QueryRow(ctx, `
 		SELECT l.id, l.customer_id, l.plan_id, p.code, l.key, l.key_hash, l.status,
 		       l.expires_at, l.max_instances, l.grace_period_h, COALESCE(l.notes,''),
 		       l.created_at, l.updated_at
 		FROM licenses l
 		JOIN plans p ON p.id = l.plan_id
-		WHERE l.key_hash = $1`, hash)
+		WHERE l.key_hash = $1`, hash))
+}
+
+func (r *Repo) FindLicenseByID(ctx context.Context, id uuid.UUID) (*model.License, error) {
+	return r.scanLicense(r.pool.QueryRow(ctx, `
+		SELECT l.id, l.customer_id, l.plan_id, p.code, l.key, l.key_hash, l.status,
+		       l.expires_at, l.max_instances, l.grace_period_h, COALESCE(l.notes,''),
+		       l.created_at, l.updated_at
+		FROM licenses l
+		JOIN plans p ON p.id = l.plan_id
+		WHERE l.id = $1`, id))
+}
+
+func (r *Repo) scanLicense(row pgx.Row) (*model.License, error) {
 	var l model.License
 	err := row.Scan(&l.ID, &l.CustomerID, &l.PlanID, &l.PlanCode, &l.Key, &l.KeyHash,
 		&l.Status, &l.ExpiresAt, &l.MaxInstances, &l.GracePeriodH, &l.Notes,

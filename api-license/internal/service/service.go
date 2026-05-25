@@ -183,12 +183,8 @@ func (s *Service) Heartbeat(ctx context.Context, in HeartbeatInput) (*HeartbeatO
 				"hwid": in.HWID}, 2)
 	}
 
-	// Refresh license info
-	hash, _ := s.licenseHashFromInstallation(ctx, inst.LicenseID)
-	if hash == "" {
-		return nil, ErrLicenseNotFound
-	}
-	lic, err := s.repo.FindLicenseByHash(ctx, hash)
+	// Refresh license info — busca direta por ID, sem varrer todas as licenças.
+	lic, err := s.repo.FindLicenseByID(ctx, inst.LicenseID)
 	if err != nil {
 		return nil, ErrLicenseNotFound
 	}
@@ -255,19 +251,6 @@ func (s *Service) releaseMaterial(ctx context.Context) (string, map[string]any, 
 	return "", nil, err
 }
 
-func (s *Service) licenseHashFromInstallation(ctx context.Context, licID uuid.UUID) (string, error) {
-	// licenses have key_hash; we just need a way to find by id — small helper
-	licList, err := s.repo.ListLicenses(ctx, 1000, 0)
-	if err != nil {
-		return "", err
-	}
-	for _, l := range licList {
-		if l.ID == licID {
-			return l.KeyHash, nil
-		}
-	}
-	return "", errors.New("not found")
-}
 
 func defaultManifest(version, registry string) map[string]any {
 	return map[string]any{
