@@ -5,14 +5,30 @@
     auto_https off
 }
 
-# Landing page
+# Landing page + rotas admin e API via porta 80
 :80 {
     encode gzip
-    root * /srv
-    @install path /install.sh
-    header @install Content-Type "text/x-shellscript; charset=utf-8"
-    file_server
-    try_files {path} {path}.html /index.html
+
+    # API de licenca via porta 80 (compativel com firewalls que bloqueiam 8080)
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy api:8443
+    }
+
+    # Admin dashboard acessivel em /admin
+    handle /admin* {
+        uri strip_prefix /admin
+        reverse_proxy admin:80
+    }
+
+    # Tudo o mais: landing page estatica
+    handle {
+        root * /srv
+        @install path /install.sh
+        header @install Content-Type "text/x-shellscript; charset=utf-8"
+        file_server
+        try_files {path} {path}.html /index.html
+    }
 }
 
 # API de licença

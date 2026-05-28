@@ -94,7 +94,7 @@ configure_from_host() {
     warn "Modo IP: sem TLS. Nao use em producao com dados reais."
     ACCESS_MODE="I"
     PUBLIC_HOST="${SERVER_HOST_INPUT}"
-    API_HOST="${SERVER_HOST_INPUT}:8080"
+    API_HOST="${SERVER_HOST_INPUT}/api"
     ADM_HOST="${SERVER_HOST_INPUT}:8081"
     PORTAL_HOST="${SERVER_HOST_INPUT}:8082"
     REG_HOST="${SERVER_HOST_INPUT}:5000"
@@ -205,7 +205,7 @@ if [[ ! -f .env ]] || ! grep -q "^API_HOST=" .env 2>/dev/null; then
     [[ -n "$SERVER_IP" ]] || die "IP obrigatório."
 
     PUBLIC_HOST="${SERVER_IP}"
-    API_HOST="${SERVER_IP}:8080"
+    API_HOST="${SERVER_IP}/api"
     ADM_HOST="${SERVER_IP}:8081"
     PORTAL_HOST="${SERVER_IP}:8082"
     REG_HOST="${SERVER_IP}:5000"
