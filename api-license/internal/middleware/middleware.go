@@ -58,6 +58,29 @@ func RateLimitByIP(c *cache.Cache, route string, max int, window time.Duration) 
 	}
 }
 
+// RateLimitByInstallation limita por X-Installation-ID em vez de IP.
+// Garante que clientes diferentes nao compartilhem o mesmo bucket,
+// eliminando 429 causado por multiplos workers de uma mesma instalacao.
+func RateLimitByInstallation(c *cache.Cache, route string, max int, window time.Duration) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		id := ctx.Get("X-Installation-ID")
+		if id == "" {
+			id = ctx.IP()
+		}
+		key := route + ":inst:" + id
+		cctx, cancel := context.WithTimeout(ctx.Context(), 1*time.Second)
+		defer cancel()
+		ok, err := c.RateLimit(cctx, key, max, window)
+		if err != nil {
+			return ctx.Next()
+		}
+		if !ok {
+			return fiber.NewError(429, "rate_limited")
+		}
+		return ctx.Next()
+	}
+}
+
 // AdminAuth constant-time bearer token check.
 func AdminAuth(token string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {

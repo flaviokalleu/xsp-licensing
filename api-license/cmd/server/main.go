@@ -82,7 +82,7 @@ func main() {
 		middleware.RateLimitByIP(cch, "activate", 20, 1*time.Minute),
 		pub.Activate)
 	v1.Post("/heartbeat",
-		middleware.RateLimitByIP(cch, "heartbeat", 200, 1*time.Minute),
+		middleware.RateLimitByInstallation(cch, "heartbeat", 500, 1*time.Minute),
 		pub.Heartbeat)
 	v1.Post("/deactivate",
 		middleware.RateLimitByIP(cch, "deactivate", 10, 1*time.Minute),
