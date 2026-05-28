@@ -59,8 +59,8 @@ func RateLimitByIP(c *cache.Cache, route string, max int, window time.Duration) 
 }
 
 // RateLimitByInstallation limita por X-Installation-ID em vez de IP.
-// Garante que clientes diferentes nao compartilhem o mesmo bucket,
-// eliminando 429 causado por multiplos workers de uma mesma instalacao.
+// Quando o limite é atingido, retorna 200 OK silencioso em vez de 429,
+// para que o cliente use o cache local sem ver nenhum erro.
 func RateLimitByInstallation(c *cache.Cache, route string, max int, window time.Duration) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		id := ctx.Get("X-Installation-ID")
@@ -75,7 +75,13 @@ func RateLimitByInstallation(c *cache.Cache, route string, max int, window time.
 			return ctx.Next()
 		}
 		if !ok {
-			return fiber.NewError(429, "rate_limited")
+			// Silencioso: devolve 200 ok para o cliente usar o cache local.
+			// Nunca retorna 429 — o painel nunca é bloqueado por rate limit.
+			return ctx.JSON(fiber.Map{
+				"status":     "ok",
+				"cached":     true,
+				"expires_at": nil,
+			})
 		}
 		return ctx.Next()
 	}
