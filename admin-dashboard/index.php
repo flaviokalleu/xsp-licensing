@@ -673,12 +673,35 @@ form.inline { display:inline; }
 <script>
 /* ── copy ── */
 function copyText(srcId, okId) {
-    const text = document.getElementById(srcId).textContent.trim();
-    navigator.clipboard.writeText(text).then(() => {
+    const src = document.getElementById(srcId);
+    if (!src) return;
+    const text = src.textContent.trim();
+    const done = () => {
         const el = document.getElementById(okId);
-        el.style.display = 'inline';
-        setTimeout(() => el.style.display = 'none', 2000);
-    });
+        if (el) {
+            el.style.display = 'inline';
+            setTimeout(() => el.style.display = 'none', 2000);
+        }
+    };
+    // navigator.clipboard só existe em contexto seguro (HTTPS/localhost).
+    // Como o painel costuma rodar em HTTP, caímos no fallback abaixo.
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(() => copyTextFallback(text, done));
+    } else {
+        copyTextFallback(text, done);
+    }
+}
+function copyTextFallback(text, cb) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:none;outline:none;box-shadow:none;background:transparent;opacity:0;z-index:99999;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, 99999);
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    if (cb) cb();
 }
 
 /* ── install command ── */
