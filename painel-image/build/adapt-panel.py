@@ -115,7 +115,7 @@ LEAK_RE = re.compile(
     re.IGNORECASE,
 )
 
-PANEL_DISPLAY_VERSION = 'Alfa v10'
+PANEL_DISPLAY_VERSION = 'Alfa v15'
 PANEL_BRAND_NAME = 'PB&Ctv'
 
 INCLUDE_RE = re.compile(

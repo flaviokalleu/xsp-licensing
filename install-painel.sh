@@ -44,7 +44,7 @@ die()  { echo "${RED}ERRO:${NC} $*" >&2; exit 1; }
 clear || true
 cat <<'BANNER'
 ===============================================================
-  PAINEL OFFICE XTREAM - Instalador Automatico v10
+  PAINEL OFFICE XTREAM - Instalador Automatico v15
   Valida licenca e instala o painel direto do GitHub.
 ===============================================================
 BANNER
